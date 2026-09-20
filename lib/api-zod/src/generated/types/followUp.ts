@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
+export interface FollowUp {
+  id: number;
+  company: string;
+  task: string;
+  dueAt: Date;
+  priority: string;
   status: string;
 }

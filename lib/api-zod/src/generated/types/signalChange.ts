@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface SignalChange {
+  id: number;
+  label: string;
+  detail: string;
+  severity: string;
+  occurredAt: Date;
 }

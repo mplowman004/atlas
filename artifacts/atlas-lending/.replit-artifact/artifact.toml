@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Atlas Lending Dashboard"
+description = "A commercial lending intelligence dashboard for Utah County that turns verified permit and parcel activity into prioritized opportunities, referrals, and follow-up work."
+version = "1.0.0"
+id = "artifacts/atlas-lending"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21641
+
+[services.development]
+run = "pnpm --filter @workspace/atlas-lending run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/atlas-lending", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/atlas-lending/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21641"
+BASE_PATH = "/"

@@ -6,6 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
+export interface Referral {
+  id: number;
+  company: string;
+  referralType: string;
+  trigger: string;
+  score: number;
+  location: string;
   status: string;
 }

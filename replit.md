@@ -1,6 +1,6 @@
-# [Project name]
+# Atlas Lending Dashboard
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Atlas is a Utah County commercial lending intelligence dashboard that turns verified permit and parcel signals into prioritized opportunities, referrals, and follow-up work.
 
 ## Run & Operate
 
@@ -22,23 +22,32 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/atlas-lending` — React + Vite dashboard with morning brief, opportunities, referrals, signals, and source/rules views.
+- `artifacts/api-server/src/routes/atlas.ts` — Atlas dashboard API routes and the seeded Utah County demo baseline.
+- `lib/api-spec/openapi.yaml` — source of truth for the Atlas API contract.
+- `lib/api-client-react/src/generated` and `lib/api-zod/src/generated` — generated client hooks and server validation schemas.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The frontend consumes generated React Query hooks from the OpenAPI contract rather than hand-written fetchers.
+- Source quality is visible as a first-class dashboard concept: verified, review-required, and rejected records are not blended together.
+- Product hypotheses are intentionally labeled as estimates and are separate from confirmed borrower intent.
+- Ingest is bounded and repeatable through a small request contract so a future official-source connector can replace the demo baseline without changing the dashboard surface.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Morning brief with pipeline bands, source coverage, significant signal changes, and follow-ups due.
+- Filterable lending opportunities ranked by score with product hypothesis, estimated range, property context, and verification state.
+- Referral queue, signal audit trail, source freshness, decision thresholds, and controlled ingest feedback.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+_No persistent preferences recorded._
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- After changing `lib/api-spec/openapi.yaml`, run `pnpm --filter @workspace/api-spec run codegen` before checking frontend or backend types.
+- Artifact workflows provide `PORT` and `BASE_PATH`; use the managed workflow or preview rather than running the Vite command without those variables.
 
 ## Pointers
 

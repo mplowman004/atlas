@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface IngestInput {
+  /**
+     * @minimum 1
+     * @maximum 1000
+     */
+  limit?: number;
+  promoteVerified?: boolean;
 }
