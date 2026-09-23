@@ -49,6 +49,13 @@ _No persistent preferences recorded._
 - After changing `lib/api-spec/openapi.yaml`, run `pnpm --filter @workspace/api-spec run codegen` before checking frontend or backend types.
 - Artifact workflows provide `PORT` and `BASE_PATH`; use the managed workflow or preview rather than running the Vite command without those variables.
 
+## Live Utah County ingest
+
+- The dashboard now reads from PostgreSQL-backed Atlas tables and queries the official Utah County TaxParcel and Building Permits ArcGIS sources at runtime.
+- Promotion is conservative: a permit must resolve to exactly one parcel and `ACCOUNTNO` must exactly match official `PARCELID` or `PARCEL_NO` after normalization.
+- The first QA run uses `promoteVerified=false`; review the match counts before running a promoted ingest.
+- Product, score, and estimated loan ranges are Atlas hypotheses, not source facts or confirmed borrower intent.
+
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details

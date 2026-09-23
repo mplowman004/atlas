@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
-import atlasRouter from "./atlas";
+import atlasRouter from "./atlas-live";
 
 const router: IRouter = Router();
 

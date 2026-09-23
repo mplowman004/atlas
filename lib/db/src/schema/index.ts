@@ -1,20 +1,101 @@
-// Export your models here. Add one export per file
-// export * from "./posts";
-//
-// Each model/table should ideally be split into different files.
-// Each model/table should define a Drizzle table, insert schema, and types:
-//
-//   import { pgTable, text, serial } from "drizzle-orm/pg-core";
-//   import { createInsertSchema } from "drizzle-zod";
-//   import { z } from "zod/v4";
-//
-//   export const postsTable = pgTable("posts", {
-//     id: serial("id").primaryKey(),
-//     title: text("title").notNull(),
-//   });
-//
-//   export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true });
-//   export type InsertPost = z.infer<typeof insertPostSchema>;
-//   export type Post = typeof postsTable.$inferSelect;
+import {
+  boolean,
+  doublePrecision,
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
-export {}
+export const atlasProperties = pgTable(
+  "atlas_properties",
+  {
+    id: serial("id").primaryKey(),
+    parcelId: text("parcel_id").notNull(),
+    parcelNo: text("parcel_no"),
+    ownerName: text("owner_name"),
+    siteAddress: text("site_address"),
+    city: text("city"),
+    zip: text("zip"),
+    propertyType: text("property_type"),
+    acreage: doublePrecision("acreage"),
+    marketLandValue: doublePrecision("market_land_value"),
+    marketImprovementValue: doublePrecision("market_improvement_value"),
+    marketValue: doublePrecision("market_value"),
+    previousMarketValue: doublePrecision("previous_market_value"),
+    yearBuilt: integer("year_built"),
+    aboveGradeArea: integer("above_grade_area"),
+    sourceObjectId: text("source_object_id"),
+    sourceUrl: text("source_url").notNull(),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+    raw: jsonb("raw").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("atlas_properties_parcel_id_uq").on(table.parcelId)],
+);
+
+export const atlasPermits = pgTable(
+  "atlas_permits",
+  {
+    id: serial("id").primaryKey(),
+    permitNo: text("permit_no").notNull(),
+    accountNo: text("account_no"),
+    permitType: text("permit_type"),
+    classification: text("classification"),
+    permitDate: timestamp("permit_date", { withTimezone: true }),
+    permitAmount: doublePrecision("permit_amount"),
+    reason: text("reason"),
+    reasonDetail: text("reason_detail"),
+    permitUse: text("permit_use"),
+    status: text("status"),
+    ownerName: text("owner_name"),
+    contractorCode: text("contractor_code"),
+    lenderCode: text("lender_code"),
+    propertyId: integer("property_id").references(() => atlasProperties.id),
+    verificationState: text("verification_state").notNull().default("REVIEW_REQUIRED"),
+    verificationReason: text("verification_reason"),
+    sourceObjectId: text("source_object_id"),
+    sourceUrl: text("source_url").notNull(),
+    raw: jsonb("raw").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("atlas_permits_permit_no_uq").on(table.permitNo)],
+);
+
+export const atlasOpportunities = pgTable("atlas_opportunities", {
+  id: serial("id").primaryKey(),
+  permitId: integer("permit_id").references(() => atlasPermits.id),
+  propertyId: integer("property_id").references(() => atlasProperties.id),
+  company: text("company").notNull(),
+  product: text("product").notNull(),
+  score: doublePrecision("score").notNull(),
+  status: text("status").notNull().default("NEW"),
+  verificationState: text("verification_state").notNull(),
+  estimatedMin: doublePrecision("estimated_min"),
+  estimatedMax: doublePrecision("estimated_max"),
+  reason: text("reason").notNull(),
+  location: text("location").notNull(),
+  propertyType: text("property_type"),
+  marketValue: doublePrecision("market_value"),
+  signalCount: integer("signal_count").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const atlasIngestRuns = pgTable("atlas_ingest_runs", {
+  id: serial("id").primaryKey(),
+  seen: integer("seen").notNull(),
+  written: integer("written").notNull(),
+  verifiedMatches: integer("verified_matches").notNull(),
+  reviewRequired: integer("review_required").notNull(),
+  rejected: integer("rejected").notNull(),
+  promoted: boolean("promoted").notNull().default(false),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  notes: text("notes"),
+});
