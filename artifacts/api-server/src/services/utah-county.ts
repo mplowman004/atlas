@@ -11,6 +11,7 @@ export const atlasSources = {
 type ArcFeature = { attributes: Record<string, unknown> };
 type ArcResponse = {
   features?: ArcFeature[];
+  count?: number;
   error?: { message?: string; details?: string[] };
 };
 
@@ -43,6 +44,16 @@ async function arcQuery(
   return body.features ?? [];
 }
 
+async function arcCount(base: string, where: string) {
+  const url = queryUrl(base, { f: "json", where, returnCountOnly: true });
+  const response = await fetch(url, { headers: { "user-agent": "Atlas-Lending/1.0 (+official-source-ingest)" } });
+  if (!response.ok) throw new Error(`Utah County count HTTP ${response.status}`);
+  const body = (await response.json()) as ArcResponse;
+  if (body.error || !Number.isSafeInteger(body.count) || body.count! < 0)
+    throw new Error(`Utah County permit count unavailable: ${body.error?.message ?? "invalid count"}`);
+  return body.count!;
+}
+
 export async function fetchRecentPermits(limit: number) {
   const fields = [
     "OBJECTID_1",
@@ -54,13 +65,39 @@ export async function fetchRecentPermits(limit: number) {
     "PERMITDATE",
     "PERMITSTATUS",
     "PERMITWORKDATE",
+    "PERMITAMOUNT",
+    "PERMITREASON",
+    "PERMITREASONDETAIL",
+    "PERMITUSE",
+    "OWNERNAME",
+    "CONTRACTORCODE",
+    "LENDERCODE",
   ].join(",");
-  return arcQuery(PERMIT_TABLE, {
-    where: "PERMITCLASSIFICATION IN ('COMMERCIAL','MULTI-FAMILY')",
-    outFields: fields,
-    orderByFields: "PERMITDATE DESC",
-    resultRecordCount: Math.min(limit, 1000),
-  });
+  // A bounded date predicate prevents an old first page from masquerading as
+  // the newest activity when the ArcGIS layer cannot honor ORDER BY.
+  const since = new Date(Date.now() - 180 * 86_400_000);
+  const dateLiteral = `${since.getUTCFullYear()}-${String(since.getUTCMonth() + 1).padStart(2, "0")}-${String(since.getUTCDate()).padStart(2, "0")}`;
+  const where = `PERMITDATE >= DATE '${dateLiteral}' AND PERMITCLASSIFICATION IN ('COMMERCIAL','MULTI-FAMILY')`;
+  const total = await arcCount(PERMIT_TABLE, where);
+  if (total === 0) throw new Error("Utah County source returned no current commercial permits; freshness requires review");
+  // Fail closed if the service has more than a safe bounded pull; a partial
+  // unsorted page cannot establish which permits are newest.
+  if (total > 10_000) throw new Error(`Recent permit set (${total}) exceeds safe 10,000-record scan`);
+  const all: ArcFeature[] = [];
+  for (let offset = 0; offset < total; offset += 500) {
+    const page = await arcQuery(PERMIT_TABLE, { where, outFields: fields,
+      orderByFields: "PERMITDATE DESC, OBJECTID_1 DESC", resultOffset: offset,
+      resultRecordCount: Math.min(500, total - offset) });
+    if (page.length !== Math.min(500, total - offset))
+      throw new Error(`Utah County permit page incomplete at offset ${offset}`);
+    all.push(...page);
+  }
+  if (new Set(all.map(f => String(f.attributes.OBJECTID_1))).size !== total)
+    throw new Error("Utah County permit pagination returned duplicate or missing identifiers");
+  all.sort((a, b) => (toDate(b.attributes.PERMITDATE)?.getTime() ?? 0) -
+    (toDate(a.attributes.PERMITDATE)?.getTime() ?? 0) ||
+    Number(b.attributes.OBJECTID_1 ?? 0) - Number(a.attributes.OBJECTID_1 ?? 0));
+  return all.slice(0, Math.min(limit, 1000));
 }
 
 function sqlEscape(value: string) {

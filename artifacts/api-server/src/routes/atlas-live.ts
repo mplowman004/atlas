@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, count, desc, eq, gte } from "drizzle-orm";
+import { count, desc, eq, inArray } from "drizzle-orm";
 import {
   atlasIngestRuns,
   atlasOpportunities,
@@ -26,9 +26,9 @@ import {
   textValue,
   toDate,
 } from "../services/utah-county";
+import { classifyProduct, isCommercialProperty, isCurrentPermit, MAX_PERMIT_AGE_DAYS, PROMOTION_THRESHOLD, scoreVerifiedSignal } from "../services/atlas-rules";
 
 const router: IRouter = Router();
-const PROMOTION_THRESHOLD = 0.78;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -47,43 +47,6 @@ function ownerCorroborates(a: string | null, b: string | null) {
       (x === y ||
         (x.length > 8 && y.length > 8 && (x.includes(y) || y.includes(x)))),
   );
-}
-
-function isCommercial(a: Record<string, unknown>) {
-  const type = `${a.PROP_TYPE_DESCR ?? ""} ${a.SPC_PROP_TYP_DESCR ?? ""}`.toUpperCase();
-  return !/(RESIDENTIAL|SINGLE FAMILY|CONDO|TOWNHOME)/.test(type) && Boolean(type.trim());
-}
-
-function productHypothesis(
-  permit: Record<string, unknown>,
-  parcel: Record<string, unknown>,
-) {
-  const corpus = `${permit.PERMITTYPE ?? ""} ${permit.PERMITREASON ?? ""} ${permit.PERMITREASONDETAIL ?? ""} ${permit.PERMITUSE ?? ""} ${parcel.PROP_TYPE_DESCR ?? ""} ${parcel.SPC_PROP_TYP_DESCR ?? ""}`.toUpperCase();
-  if (/(EQUIPMENT|MACHIN|PRODUCTION LINE|MANUFACTUR)/.test(corpus)) return "EQUIPMENT";
-  if (/(REFINANCE|REFI\b)/.test(corpus)) return "REFINANCE";
-
-  // A permit proves capital activity, not a specific borrowing need.
-  // Do not infer a lending product without product-specific evidence.
-  return "UNKNOWN";
-}
-
-function scoreRecord(
-  permit: Record<string, unknown>,
-  parcel: Record<string, unknown>,
-  directMatch: boolean,
-  ownerMatch: boolean,
-) {
-  let score = 0.42;
-  if (directMatch) score += 0.22;
-  if (ownerMatch) score += 0.08;
-  if (isCommercial(parcel)) score += 0.1;
-  const value = num(parcel.MKT_CUR_VALUE) ?? 0;
-  if (value >= 500_000 && value <= 5_000_000) score += 0.08;
-  else if (value >= 100_000 && value <= 20_000_000) score += 0.04;
-  const amount = num(permit.PERMITAMOUNT) ?? 0;
-  if (amount >= 100_000) score += 0.05;
-  if (num(permit.LENDERCODE)) score += 0.03;
-  return clamp(score, 0, 0.97);
 }
 
 function estimateRange(marketValue: number | null) {
@@ -106,21 +69,45 @@ function estimateRange(marketValue: number | null) {
   return [estimatedMin, estimatedMax] as const;
 }
 
+// The legacy table has one row per permit. Read it as one lead per property,
+// anchored to the newest current, verified permit; preserve historical rows.
+async function currentOpportunities() {
+  const rows = await db.select({ opportunity: atlasOpportunities, permit: atlasPermits })
+    .from(atlasOpportunities)
+    .innerJoin(atlasPermits, eq(atlasOpportunities.permitId, atlasPermits.id));
+  const current = rows.filter(({ permit }) =>
+    isCurrentPermit(permit.permitDate) &&
+    (permit.verificationState === "CORROBORATED" || permit.verificationState === "VERIFIED_SOURCE_LINK"));
+  const ids = [...new Set(current.map(({ opportunity }) => opportunity.propertyId).filter((id): id is number => id !== null))];
+  const supporting = ids.length ? await db.select({ id: atlasPermits.id, propertyId: atlasPermits.propertyId, permitDate: atlasPermits.permitDate })
+    .from(atlasPermits).where(inArray(atlasPermits.propertyId, ids)) : [];
+  const counts = new Map<number, number>();
+  for (const permit of supporting) if (permit.propertyId !== null && isCurrentPermit(permit.permitDate))
+    counts.set(permit.propertyId, (counts.get(permit.propertyId) ?? 0) + 1);
+  const byProperty = new Map<number, (typeof current)[number]>();
+  for (const item of current) {
+    const id = item.opportunity.propertyId;
+    if (id === null) continue;
+    const previous = byProperty.get(id);
+    if (!previous || (item.permit.permitDate?.getTime() ?? 0) > (previous.permit.permitDate?.getTime() ?? 0)) byProperty.set(id, item);
+  }
+  return [...byProperty.values()].map(({ opportunity }) => ({
+    ...opportunity, signalCount: counts.get(opportunity.propertyId!) ?? 1,
+  }));
+}
+
 router.get("/atlas/dashboard", async (_req, res, next) => {
   try {
-    const [[opp], [perm], [prop], [latest]] = await Promise.all([
-      db.select({ n: count() }).from(atlasOpportunities),
+    const [opportunities, [perm], [prop], [latest]] = await Promise.all([
+      currentOpportunities(),
       db.select({ n: count() }).from(atlasPermits),
       db.select({ n: count() }).from(atlasProperties),
       db.select().from(atlasIngestRuns).orderBy(desc(atlasIngestRuns.id)).limit(1),
     ]);
-    const rows = await db
-      .select()
-      .from(atlasOpportunities)
-      .orderBy(desc(atlasOpportunities.score))
-      .limit(100);
+    const rows = opportunities;
     const pipelineMap = new Map<string, { value: number; count: number }>();
     for (const row of rows) {
+      if (row.product === "UNKNOWN") continue;
       const bucket = pipelineMap.get(row.product) ?? { value: 0, count: 0 };
       bucket.count += 1;
       bucket.value += ((row.estimatedMin ?? 0) + (row.estimatedMax ?? 0)) / 2;
@@ -128,7 +115,7 @@ router.get("/atlas/dashboard", async (_req, res, next) => {
     }
     const data = GetAtlasDashboardResponse.parse({
       counts: {
-        opportunities: opp?.n ?? 0,
+        opportunities: opportunities.length,
         permits: perm?.n ?? 0,
         properties: prop?.n ?? 0,
         referrals: 0,
@@ -165,18 +152,11 @@ router.get("/atlas/dashboard", async (_req, res, next) => {
 router.get("/atlas/opportunities", async (req, res, next) => {
   try {
     const query = ListAtlasOpportunitiesQueryParams.parse(req.query);
-    const filters = [];
-    if (query.status) filters.push(eq(atlasOpportunities.status, query.status));
-    if (query.product) filters.push(eq(atlasOpportunities.product, query.product));
-    if (query.minScore !== undefined) {
-      filters.push(gte(atlasOpportunities.score, query.minScore));
-    }
-    const rows = await db
-      .select()
-      .from(atlasOpportunities)
-      .where(filters.length ? and(...filters) : undefined)
-      .orderBy(desc(atlasOpportunities.score))
-      .limit(query.limit);
+    const rows = (await currentOpportunities())
+      .filter(row => (!query.status || row.status === query.status) &&
+        (!query.product || row.product === query.product) &&
+        (query.minScore === undefined || row.score >= query.minScore))
+      .sort((a, b) => b.score - a.score).slice(0, query.limit);
     res.json(
       ListAtlasOpportunitiesResponse.parse(
         rows.map((row) => ({
@@ -243,6 +223,12 @@ router.post("/atlas/ingest", async (req, res, next) => {
     let verifiedMatches = 0;
     let reviewRequired = 0;
     let rejected = 0;
+    let stale = 0;
+
+    // A "recent" endpoint returning only historical data is a source failure.
+    // Do not promote anything from that run, even when individual records verify.
+    const sourceIsCurrent = permits.length === 0 || permits.some(feature =>
+      isCurrentPermit(toDate(feature.attributes.PERMITDATE), startedAt));
 
     for (const feature of permits) {
       const permitAttrs = feature.attributes;
@@ -254,19 +240,21 @@ router.post("/atlas/ingest", async (req, res, next) => {
       }
 
       const permitDate = toDate(permitAttrs.PERMITDATE);
-    if (permitDate && permitDate.getTime() > startedAt.getTime()) {
+    if (!permitDate || permitDate.getTime() > startedAt.getTime()) {
       reviewRequired += 1;
       await db.insert(atlasPermits).values({
         permitNo,
         accountNo,
         verificationState: "REVIEW_REQUIRED",
-        verificationReason: "Permit date is in the future relative to ingestion time",
+        verificationReason: "Permit date is missing, invalid, or in the future relative to ingestion time",
         sourceObjectId: textValue(permitAttrs.OBJECTID_1 ?? permitAttrs.ESRI_OID),
         sourceUrl: atlasSources.permit,
         raw: permitAttrs,
       }).onConflictDoNothing({ target: atlasPermits.permitNo });
       continue;
     }
+
+    if (!isCurrentPermit(permitDate, startedAt)) stale += 1;
 
     const parcels = await findParcelForAccount(accountNo);
       if (parcels.length !== 1) {
@@ -345,7 +333,7 @@ router.post("/atlas/ingest", async (req, res, next) => {
           accountNo,
           permitType: textValue(permitAttrs.PERMITTYPE),
           classification: textValue(permitAttrs.PERMITCLASSIFICATION),
-          permitDate: toDate(permitAttrs.PERMITDATE),
+          permitDate,
           permitAmount: num(permitAttrs.PERMITAMOUNT),
           reason: textValue(permitAttrs.PERMITREASON),
           reasonDetail: textValue(permitAttrs.PERMITREASONDETAIL),
@@ -368,6 +356,16 @@ router.post("/atlas/ingest", async (req, res, next) => {
           set: {
             propertyId: property.id,
             verificationState,
+            verificationReason: ownerMatch
+              ? "Exact official account/parcel match plus owner-name corroboration"
+              : "Exact official account/parcel match; owner name not used as a fact match",
+            permitDate,
+            permitAmount: num(permitAttrs.PERMITAMOUNT),
+            permitType: textValue(permitAttrs.PERMITTYPE),
+            classification: textValue(permitAttrs.PERMITCLASSIFICATION),
+            reason: textValue(permitAttrs.PERMITREASON),
+            reasonDetail: textValue(permitAttrs.PERMITREASONDETAIL),
+            permitUse: textValue(permitAttrs.PERMITUSE),
             raw: permitAttrs,
             updatedAt: new Date(),
           },
@@ -376,15 +374,17 @@ router.post("/atlas/ingest", async (req, res, next) => {
 
       written += 1;
       verifiedMatches += 1;
-      const score = scoreRecord(permitAttrs, parcelAttrs, directMatch, ownerMatch);
+      const score = scoreVerifiedSignal(permitAttrs, parcelAttrs, ownerMatch);
       if (
         input.promoteVerified &&
+        sourceIsCurrent &&
+        isCurrentPermit(permitDate, startedAt) &&
         score >= PROMOTION_THRESHOLD &&
-        isCommercial(parcelAttrs)
+        isCommercialProperty(parcelAttrs)
       ) {
         const marketValue = num(parcelAttrs.MKT_CUR_VALUE);
         const [estimatedMin, estimatedMax] = estimateRange(marketValue);
-        const product = productHypothesis(permitAttrs, parcelAttrs);
+        const product = classifyProduct(permitAttrs);
         const company =
           textValue(parcelAttrs.OWNER_NAME) ??
           textValue(permitAttrs.OWNERNAME) ??
@@ -392,11 +392,11 @@ router.post("/atlas/ingest", async (req, res, next) => {
         const location = [textValue(parcelAttrs.SITE_CITY), "UT"]
           .filter(Boolean)
           .join(", ");
-        const reason = `${product.replaceAll("_", " ")} is an Atlas hypothesis based on a corroborated Utah County permit-to-parcel link, commercial property context, and recent capital activity. Borrower intent is not confirmed.`;
+        const reason = `Current verified Utah County permit activity at this commercial property. Product: ${product === "UNKNOWN" ? "unconfirmed" : product.replaceAll("_", " ") + " (source evidence)"}. Borrower intent and financing need are not confirmed.`;
         const existing = await db
-          .select({ id: atlasOpportunities.id })
+          .select({ id: atlasOpportunities.id, permitId: atlasOpportunities.permitId })
           .from(atlasOpportunities)
-          .where(eq(atlasOpportunities.permitId, permit.id))
+          .where(eq(atlasOpportunities.propertyId, property.id))
           .limit(1);
         if (!existing.length) {
           await db.insert(atlasOpportunities).values({
@@ -414,8 +414,16 @@ router.post("/atlas/ingest", async (req, res, next) => {
               textValue(parcelAttrs.SPC_PROP_TYP_DESCR) ??
               textValue(parcelAttrs.PROP_TYPE_DESCR),
             marketValue,
-            signalCount: ownerMatch ? 4 : 3,
+            signalCount: 1,
           });
+        } else {
+          // Reuse the property's existing lead, including a legacy 2020 lead.
+          // The permit remains a separate source signal in atlas_permits.
+          await db.update(atlasOpportunities).set({ permitId: permit.id, company, product,
+            score, verificationState, estimatedMin, estimatedMax, reason, location,
+            propertyType: textValue(parcelAttrs.SPC_PROP_TYP_DESCR) ?? textValue(parcelAttrs.PROP_TYPE_DESCR),
+            marketValue, updatedAt: new Date() })
+            .where(eq(atlasOpportunities.id, existing[0].id));
         }
       }
     }
@@ -429,10 +437,10 @@ router.post("/atlas/ingest", async (req, res, next) => {
         verifiedMatches,
         reviewRequired,
         rejected,
-        promoted: input.promoteVerified,
+        promoted: input.promoteVerified && sourceIsCurrent,
         startedAt,
         finishedAt,
-        notes: `Official Utah County sources only. Parcel: ${atlasSources.parcel}; Permit: ${atlasSources.permit}`,
+        notes: `Official Utah County sources only. ${stale} stale permits; source freshness ${sourceIsCurrent ? "pass" : "failed"}; ${MAX_PERMIT_AGE_DAYS}-day gate. Parcel: ${atlasSources.parcel}; Permit: ${atlasSources.permit}`,
       })
       .returning();
     res.json(
@@ -443,7 +451,7 @@ router.post("/atlas/ingest", async (req, res, next) => {
         verifiedMatches,
         reviewRequired,
         rejected,
-        promoted: input.promoteVerified,
+        promoted: input.promoteVerified && sourceIsCurrent,
         startedAt: startedAt.toISOString(),
         finishedAt: finishedAt.toISOString(),
       }),
