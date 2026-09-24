@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyProduct, isCurrentPermit, scoreVerifiedSignal, PROMOTION_THRESHOLD } from "../src/services/atlas-rules.ts";
+import { classifyProduct, isCurrentPermit, scoreVerifiedSignal, shouldReplaceAnchor, PROMOTION_THRESHOLD } from "../src/services/atlas-rules.ts";
 
 const now = new Date("2026-09-24T12:00:00Z");
 test("historical, missing and future permits cannot be current", () => {
@@ -25,4 +25,12 @@ test("generic construction or manufacturing descriptions do not imply debt produ
   assert.equal(classifyProduct({ PERMITREASON: "equipment installation" }), "UNKNOWN");
   assert.equal(classifyProduct({ PERMITREASONDETAIL: "refinance existing mortgage" }), "REFINANCE");
   assert.equal(classifyProduct({ PERMITUSE: "equipment financing" }), "EQUIPMENT");
+});
+
+test("older supporting permits cannot replace the newest property anchor", () => {
+  const newest = new Date("2026-09-20T00:00:00Z");
+  const older = new Date("2026-08-20T00:00:00Z");
+  assert.equal(shouldReplaceAnchor(newest, older), false);
+  assert.equal(shouldReplaceAnchor(older, newest), true);
+  assert.equal(shouldReplaceAnchor(null, newest), true);
 });

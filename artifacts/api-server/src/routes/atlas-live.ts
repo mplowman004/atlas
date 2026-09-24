@@ -26,7 +26,7 @@ import {
   textValue,
   toDate,
 } from "../services/utah-county";
-import { classifyProduct, isCommercialProperty, isCurrentPermit, MAX_PERMIT_AGE_DAYS, PROMOTION_THRESHOLD, scoreVerifiedSignal } from "../services/atlas-rules";
+import { classifyProduct, isCommercialProperty, isCurrentPermit, MAX_PERMIT_AGE_DAYS, PROMOTION_THRESHOLD, scoreVerifiedSignal, shouldReplaceAnchor } from "../services/atlas-rules";
 
 const router: IRouter = Router();
 
@@ -77,12 +77,17 @@ async function currentOpportunities() {
     .innerJoin(atlasPermits, eq(atlasOpportunities.permitId, atlasPermits.id));
   const current = rows.filter(({ permit }) =>
     isCurrentPermit(permit.permitDate) &&
-    (permit.verificationState === "CORROBORATED" || permit.verificationState === "VERIFIED_SOURCE_LINK"));
+    (permit.verificationState === "CORROBORATED" || permit.verificationState === "VERIFIED_SOURCE_LINK"))
+    .map(({ opportunity, permit }) => ({ opportunity: {
+      ...opportunity,
+      product: classifyProduct({ PERMITREASON: permit.reason, PERMITREASONDETAIL: permit.reasonDetail, PERMITUSE: permit.permitUse }),
+    }, permit }));
   const ids = [...new Set(current.map(({ opportunity }) => opportunity.propertyId).filter((id): id is number => id !== null))];
-  const supporting = ids.length ? await db.select({ id: atlasPermits.id, propertyId: atlasPermits.propertyId, permitDate: atlasPermits.permitDate })
+  const supporting = ids.length ? await db.select({ id: atlasPermits.id, propertyId: atlasPermits.propertyId, permitDate: atlasPermits.permitDate, verificationState: atlasPermits.verificationState })
     .from(atlasPermits).where(inArray(atlasPermits.propertyId, ids)) : [];
   const counts = new Map<number, number>();
-  for (const permit of supporting) if (permit.propertyId !== null && isCurrentPermit(permit.permitDate))
+  for (const permit of supporting) if (permit.propertyId !== null && isCurrentPermit(permit.permitDate) &&
+    (permit.verificationState === "CORROBORATED" || permit.verificationState === "VERIFIED_SOURCE_LINK"))
     counts.set(permit.propertyId, (counts.get(permit.propertyId) ?? 0) + 1);
   const byProperty = new Map<number, (typeof current)[number]>();
   for (const item of current) {
@@ -394,8 +399,9 @@ router.post("/atlas/ingest", async (req, res, next) => {
           .join(", ");
         const reason = `Current verified Utah County permit activity at this commercial property. Product: ${product === "UNKNOWN" ? "unconfirmed" : product.replaceAll("_", " ") + " (source evidence)"}. Borrower intent and financing need are not confirmed.`;
         const existing = await db
-          .select({ id: atlasOpportunities.id, permitId: atlasOpportunities.permitId })
+          .select({ id: atlasOpportunities.id, permitId: atlasOpportunities.permitId, anchorDate: atlasPermits.permitDate })
           .from(atlasOpportunities)
+          .leftJoin(atlasPermits, eq(atlasOpportunities.permitId, atlasPermits.id))
           .where(eq(atlasOpportunities.propertyId, property.id))
           .limit(1);
         if (!existing.length) {
@@ -416,7 +422,7 @@ router.post("/atlas/ingest", async (req, res, next) => {
             marketValue,
             signalCount: 1,
           });
-        } else {
+        } else if (shouldReplaceAnchor(existing[0].anchorDate, permitDate)) {
           // Reuse the property's existing lead, including a legacy 2020 lead.
           // The permit remains a separate source signal in atlas_permits.
           await db.update(atlasOpportunities).set({ permitId: permit.id, company, product,

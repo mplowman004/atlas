@@ -26,6 +26,10 @@ export function isCurrentPermit(date: Date | null, now = new Date()) {
   return age >= 0 && age <= MAX_PERMIT_AGE_DAYS * 86_400_000;
 }
 
+export function shouldReplaceAnchor(current: Date | null, incoming: Date | null) {
+  return Boolean(incoming && (!current || incoming.getTime() > current.getTime()));
+}
+
 export function classifyProduct(permit: Record<string, unknown>) {
   // Property type and permit type do not establish borrower intent.
   const evidence = `${permit.PERMITREASON ?? ""} ${permit.PERMITREASONDETAIL ?? ""} ${permit.PERMITUSE ?? ""}`.toUpperCase();
