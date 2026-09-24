@@ -60,7 +60,11 @@ function productHypothesis(
 ) {
   const corpus = `${permit.PERMITTYPE ?? ""} ${permit.PERMITREASON ?? ""} ${permit.PERMITREASONDETAIL ?? ""} ${permit.PERMITUSE ?? ""} ${parcel.PROP_TYPE_DESCR ?? ""} ${parcel.SPC_PROP_TYP_DESCR ?? ""}`.toUpperCase();
   if (/(EQUIPMENT|MACHIN|PRODUCTION LINE|MANUFACTUR)/.test(corpus)) return "EQUIPMENT";
-  return "REFINANCE";
+  if (/(REFINANCE|REFI\b)/.test(corpus)) return "REFINANCE";
+
+  // A permit proves capital activity, not a specific borrowing need.
+  // Do not infer a lending product without product-specific evidence.
+  return "UNKNOWN";
 }
 
 function scoreRecord(
@@ -83,11 +87,23 @@ function scoreRecord(
 }
 
 function estimateRange(marketValue: number | null) {
+  // Screening range only — not a statement of borrower intent,
+  // existing debt, collateral eligibility, or approved loan amount.
   if (!marketValue || marketValue < 100_000) return [null, null] as const;
-  return [
-    clamp(Math.round((marketValue * 0.45) / 10_000) * 10_000, 100_000, 20_000_000),
-    clamp(Math.round((marketValue * 0.75) / 10_000) * 10_000, 100_000, 20_000_000),
-  ] as const;
+
+  const estimatedMin = clamp(
+    Math.round((marketValue * 0.45) / 10_000) * 10_000,
+    100_000,
+    20_000_000,
+  );
+  const estimatedMax = clamp(
+    Math.round((marketValue * 0.75) / 10_000) * 10_000,
+    100_000,
+    20_000_000,
+  );
+
+  // Atlas target profile: $100k hard minimum / $20MM hard maximum.
+  return [estimatedMin, estimatedMax] as const;
 }
 
 router.get("/atlas/dashboard", async (_req, res, next) => {
@@ -230,22 +246,39 @@ router.post("/atlas/ingest", async (req, res, next) => {
 
     for (const feature of permits) {
       const permitAttrs = feature.attributes;
-      const permitNo = textValue(permitAttrs.PERMITNO) ?? `OID-${permitAttrs.ESRI_OID}`;
+      const permitNo = textValue(permitAttrs.PERMITNO) ?? `OID-${permitAttrs.OBJECTID_1 ?? permitAttrs.ESRI_OID}`;
       const accountNo = textValue(permitAttrs.ACCOUNTNO);
       if (!accountNo) {
         rejected += 1;
         continue;
       }
 
-      const parcels = await findParcelForAccount(accountNo);
+      const permitDate = toDate(permitAttrs.PERMITDATE);
+    if (permitDate && permitDate.getTime() > startedAt.getTime()) {
+      reviewRequired += 1;
+      await db.insert(atlasPermits).values({
+        permitNo,
+        accountNo,
+        verificationState: "REVIEW_REQUIRED",
+        verificationReason: "Permit date is in the future relative to ingestion time",
+        sourceObjectId: textValue(permitAttrs.OBJECTID_1 ?? permitAttrs.ESRI_OID),
+        sourceUrl: atlasSources.permit,
+        raw: permitAttrs,
+      }).onConflictDoNothing({ target: atlasPermits.permitNo });
+      continue;
+    }
+
+    const parcels = await findParcelForAccount(accountNo);
       if (parcels.length !== 1) {
         reviewRequired += 1;
+        await db.insert(atlasPermits).values({ permitNo, accountNo, verificationState: "REVIEW_REQUIRED", verificationReason: parcels.length === 0 ? "No official parcel match found for permit account number" : "Multiple official parcel matches found for permit account number", sourceObjectId: textValue(permitAttrs.OBJECTID_1 ?? permitAttrs.ESRI_OID), sourceUrl: atlasSources.permit, raw: permitAttrs }).onConflictDoNothing({ target: atlasPermits.permitNo });
         continue;
       }
       const parcelAttrs = parcels[0].attributes;
       const directMatch = exactAccountParcelMatch(accountNo, parcelAttrs);
       if (!directMatch) {
         reviewRequired += 1;
+        await db.insert(atlasPermits).values({ permitNo, accountNo, verificationState: "REVIEW_REQUIRED", verificationReason: "Parcel candidate found but official account/parcel identifiers did not exactly match", sourceObjectId: textValue(permitAttrs.OBJECTID_1 ?? permitAttrs.ESRI_OID), sourceUrl: atlasSources.permit, raw: permitAttrs }).onConflictDoNothing({ target: atlasPermits.permitNo });
         continue;
       }
       const parcelId = textValue(parcelAttrs.PARCELID);
@@ -326,7 +359,7 @@ router.post("/atlas/ingest", async (req, res, next) => {
           verificationReason: ownerMatch
             ? "Exact official account/parcel match plus owner-name corroboration"
             : "Exact official account/parcel match; owner name not used as a fact match",
-          sourceObjectId: textValue(permitAttrs.ESRI_OID),
+          sourceObjectId: textValue(permitAttrs.OBJECTID_1 ?? permitAttrs.ESRI_OID),
           sourceUrl: atlasSources.permit,
           raw: permitAttrs,
         })

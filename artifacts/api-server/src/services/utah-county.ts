@@ -1,7 +1,7 @@
 const PARCEL_LAYER =
   "https://maps.utahcounty.gov/arcgis/rest/services/Pictometry/POL_Assr_TaxParcel/MapServer/0";
 const PERMIT_TABLE =
-  "https://maps200.utahcounty.gov/arcgis/rest/services/Assessor/Building_Permits/MapServer/1";
+  "https://maps200.utahcounty.gov/arcgis/rest/services/Assessor/Building_Permits_Recent/MapServer/0";
 
 export const atlasSources = {
   parcel: PARCEL_LAYER,
@@ -45,26 +45,18 @@ async function arcQuery(
 
 export async function fetchRecentPermits(limit: number) {
   const fields = [
-    "ESRI_OID",
+    "OBJECTID_1",
     "PERMITNO",
+    "LOCALPERMITNO",
     "ACCOUNTNO",
-    "PERMITSOURCE",
     "PERMITTYPE",
     "PERMITCLASSIFICATION",
     "PERMITDATE",
-    "PERMITAMOUNT",
-    "PERMITREASON",
-    "PERMITREASONDETAIL",
-    "PERMITUSE",
-    "PERMITACTIVEFLAG",
-    "CONTRACTORCODE",
-    "LENDERCODE",
     "PERMITSTATUS",
-    "OWNERNAME",
-    "WRITEDATE",
+    "PERMITWORKDATE",
   ].join(",");
   return arcQuery(PERMIT_TABLE, {
-    where: "1=1",
+    where: "PERMITCLASSIFICATION IN ('COMMERCIAL','MULTI-FAMILY')",
     outFields: fields,
     orderByFields: "PERMITDATE DESC",
     resultRecordCount: Math.min(limit, 1000),
