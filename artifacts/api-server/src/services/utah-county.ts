@@ -65,13 +65,6 @@ export async function fetchRecentPermits(limit: number) {
     "PERMITDATE",
     "PERMITSTATUS",
     "PERMITWORKDATE",
-    "PERMITAMOUNT",
-    "PERMITREASON",
-    "PERMITREASONDETAIL",
-    "PERMITUSE",
-    "OWNERNAME",
-    "CONTRACTORCODE",
-    "LENDERCODE",
   ].join(",");
   // A bounded date predicate prevents an old first page from masquerading as
   // the newest activity when the ArcGIS layer cannot honor ORDER BY.
