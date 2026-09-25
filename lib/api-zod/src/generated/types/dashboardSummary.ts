@@ -9,10 +9,12 @@ import type { CoverageSummary } from './coverageSummary';
 import type { DashboardCounts } from './dashboardCounts';
 import type { IngestResult } from './ingestResult';
 import type { PipelineBucket } from './pipelineBucket';
+import type { SourceStatus } from './sourceStatus';
 
 export interface DashboardSummary {
   counts: DashboardCounts;
   pipeline: PipelineBucket[];
   latestIngest: IngestResult | null;
   coverage: CoverageSummary;
+  sourceStatus: SourceStatus;
 }

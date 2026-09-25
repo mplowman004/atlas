@@ -151,7 +151,7 @@ components:
         - status
     DashboardSummary:
       type: object
-      required: [counts, pipeline, latestIngest, coverage]
+      required: [counts, pipeline, latestIngest, coverage, sourceStatus]
       properties:
         counts:
           $ref: "#/components/schemas/DashboardCounts"
@@ -165,6 +165,8 @@ components:
             - type: "null"
         coverage:
           $ref: "#/components/schemas/CoverageSummary"
+        sourceStatus:
+          $ref: "#/components/schemas/SourceStatus"
     DashboardCounts:
       type: object
       required: [opportunities, permits, properties, referrals, followUps]
@@ -188,6 +190,16 @@ components:
         verified: { type: integer }
         reviewRequired: { type: integer }
         rejected: { type: integer }
+    SourceStatus:
+      type: object
+      required: [state, lastAttemptAt, lastSuccessAt, message]
+      properties:
+        state:
+          type: string
+          enum: [CURRENT, STALE, UNAVAILABLE, NEVER]
+        lastAttemptAt: { type: ["string", "null"], format: date-time }
+        lastSuccessAt: { type: ["string", "null"], format: date-time }
+        message: { type: ["string", "null"] }
     Opportunity:
       type: object
       required: [id, company, product, score, status, verificationState, reason, location, updatedAt]

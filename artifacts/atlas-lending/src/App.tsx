@@ -121,8 +121,8 @@ function PageTitle({ eyebrow, title, description, action }: {
   );
 }
 
-function StatCard({ label, value, note, icon: Icon, accent = 'green' }: {
-  label: string; value: string | number; note: string; icon: typeof Target; accent?: 'green' | 'gold' | 'rust';
+function StatCard({ label, value, note, icon: Icon, accent = 'green', sourceIsCurrent = false }: {
+  label: string; value: string | number; note: string; icon: typeof Target; accent?: 'green' | 'gold' | 'rust'; sourceIsCurrent?: boolean;
 }) {
   const styles = {
     green: 'bg-[#e5efe9] text-[#24644f]',
@@ -133,7 +133,7 @@ function StatCard({ label, value, note, icon: Icon, accent = 'green' }: {
     <div className="group rounded-2xl border border-[#ded8cd] bg-[#fffdf8] p-5 shadow-[0_8px_30px_rgba(58,52,40,0.04)] transition-transform duration-200 hover:-translate-y-0.5" data-testid={`stat-card-${label.toLowerCase().replaceAll(' ', '-')}`}>
       <div className="mb-6 flex items-start justify-between">
         <span className={`rounded-xl p-2.5 ${styles}`}><Icon size={17} strokeWidth={1.8} /></span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.13em] text-[#9a9a8e]">Live</span>
+         <span className="font-mono text-[10px] uppercase tracking-[0.13em] text-[#9a9a8e]">{sourceIsCurrent ? 'Live' : 'Stored'}</span>
       </div>
       <div className="font-serif text-3xl tracking-[-0.02em] text-[#25343a]">{value}</div>
       <div className="mt-1 flex items-center justify-between gap-2 text-xs text-[#737b7c]">
@@ -193,6 +193,19 @@ function SignalBadge({ severity }: { severity: string }) {
   return <span className={`rounded-full px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] ${style}`}>{severity}</span>;
 }
 
+function sourceStateLabel(state: string) {
+  if (state === 'CURRENT') return 'Current';
+  if (state === 'UNAVAILABLE') return 'Unavailable';
+  if (state === 'STALE') return 'Needs review';
+  return 'Not established';
+}
+
+function sourceStateClass(state: string) {
+  if (state === 'CURRENT') return 'bg-[#e3eee7] text-[#2c6752]';
+  if (state === 'UNAVAILABLE') return 'bg-[#f3e0d8] text-[#9b493a]';
+  return 'bg-[#f4e8c9] text-[#866224]';
+}
+
 function BriefPanel() {
   const dashboard = useGetAtlasDashboard();
   const queryClient = useQueryClient();
@@ -213,19 +226,30 @@ function BriefPanel() {
   const runIngest = () => {
     setIngestNotice('');
     ingest.mutate({ data: { limit: 250, promoteVerified: true } }, {
-      onSuccess: (result) => setIngestNotice(`Run #${result.runId} completed · ${result.written} records written`),
+       onSuccess: (result) => setIngestNotice(result.written === 0
+         ? `Run #${result.runId} failed · no records written`
+         : `Run #${result.runId} completed · ${result.written} records written`),
       onError: () => setIngestNotice('Run could not complete. Check source access and try again.'),
     });
   };
   if (dashboard.isLoading) return <PageScaffold><PageTitle eyebrow={`Utah County · ${currentBriefDate()}`} title="Morning brief" description="Recent verified property activity for lending research. Financing intent requires confirmation." /><div className="grid gap-4 md:grid-cols-4"><Skeleton className="h-32" /><Skeleton className="h-32" /><Skeleton className="h-32" /><Skeleton className="h-32" /></div><div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]"><Skeleton className="h-80" /><Skeleton className="h-80" /></div></PageScaffold>;
   if (dashboard.isError || !dashboard.data) return <PageScaffold><ErrorBlock retry={() => dashboard.refetch()} /></PageScaffold>;
   const data = dashboard.data;
+  const sourceStatus = data.sourceStatus ?? {
+    state: 'NEVER' as const,
+    lastAttemptAt: data.latestIngest?.startedAt ?? null,
+    lastSuccessAt: null,
+    message: 'The dashboard API did not include source-health information; stored records are not treated as current.',
+  };
+  const sourceIsCurrent = sourceStatus.state === 'CURRENT';
+  const sourceIsStale = sourceStatus.state === 'STALE';
+  const sourceUnavailable = sourceStatus.state === 'UNAVAILABLE';
   const totalPipeline = data.pipeline.reduce((sum, bucket) => sum + bucket.value, 0);
   const coverageTotal = data.coverage.verified + data.coverage.reviewRequired + data.coverage.rejected;
   const verifiedPct = coverageTotal ? Math.round((data.coverage.verified / coverageTotal) * 100) : 0;
   return (
     <PageScaffold>
-      <PageTitle eyebrow={`Utah County · ${currentBriefDate()}`} title="Morning brief" description="Recent verified property activity for lending research. Financing intent requires confirmation." action={
+       <PageTitle eyebrow={`Utah County · ${currentBriefDate()}`} title="Morning brief" description={sourceIsCurrent ? "Recent verified property activity for lending research. Financing intent requires confirmation." : "County source status needs review. Stored records are not being presented as current activity."} action={
         <div className="flex flex-col items-end gap-2">
           <button onClick={runIngest} disabled={ingest.isPending} className="inline-flex items-center gap-2 rounded-lg bg-[#25343a] px-4 py-2.5 text-xs font-semibold text-[#fffdf8] shadow-sm transition hover:bg-[#355056] disabled:cursor-wait disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-[#c79b48]" data-testid="button-run-ingest">
             {ingest.isPending ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
@@ -235,10 +259,10 @@ function BriefPanel() {
         </div>
       } />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Prioritized opportunities" value={data.counts.opportunities} note="recent verified properties" icon={Target} accent="green" />
-        <StatCard label="Pipeline identified" value={formatCurrency(totalPipeline)} note={`${data.pipeline.length} bands`} icon={BarChart3} accent="gold" />
-        <StatCard label="Property records" value={data.counts.properties.toLocaleString()} note={`${data.counts.permits} permits`} icon={Building2} accent="rust" />
-        <StatCard label="Follow-ups due" value={data.counts.followUps} note="this week" icon={Bell} accent="green" />
+        <StatCard label="Prioritized opportunities" value={data.counts.opportunities} note="recent verified properties" icon={Target} accent="green" sourceIsCurrent={sourceIsCurrent} />
+        <StatCard label="Pipeline identified" value={formatCurrency(totalPipeline)} note={`${data.pipeline.length} bands`} icon={BarChart3} accent="gold" sourceIsCurrent={sourceIsCurrent} />
+        <StatCard label="Property records" value={data.counts.properties.toLocaleString()} note={`${data.counts.permits} permits`} icon={Building2} accent="rust" sourceIsCurrent={sourceIsCurrent} />
+        <StatCard label="Follow-ups due" value={data.counts.followUps} note="this week" icon={Bell} accent="green" sourceIsCurrent={sourceIsCurrent} />
       </div>
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
         <div className="rounded-2xl border border-[#ded8cd] bg-[#fffdf8] p-6" data-testid="panel-pipeline">
@@ -254,10 +278,10 @@ function BriefPanel() {
           </div>
           <div className="mt-8 border-t border-[#eee9df] pt-4 text-[11px] text-[#858b87]">Value is a directional estimate, not a commitment. Confirm before outreach.</div>
         </div>
-        <div className="rounded-2xl border border-[#ded8cd] bg-[#283b40] p-6 text-[#f7f2e8]" data-testid="panel-coverage">
-          <div className="mb-7 flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#c9a45a]">Source quality</p><h2 className="mt-2 text-lg font-semibold">Coverage you can trust</h2></div><ShieldCheck className="text-[#d3b06b]" size={21} strokeWidth={1.5} /></div>
-          <div className="mb-7 flex items-center gap-5"><div className="relative flex h-28 w-28 items-center justify-center rounded-full" style={{ background: `conic-gradient(#d3b06b ${verifiedPct}%, #708078 ${verifiedPct}% ${Math.min(verifiedPct + 18, 100)}%, #40575a ${Math.min(verifiedPct + 18, 100)}% 100%)` }}><div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#283b40] font-serif text-2xl">{verifiedPct}%</div></div><div className="space-y-2 text-xs"><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#d3b06b]" />Verified <strong>{data.coverage.verified}</strong></div><div className="flex items-center gap-2 text-[#c3cfcb]"><span className="h-2 w-2 rounded-full bg-[#708078]" />Review required <strong>{data.coverage.reviewRequired}</strong></div><div className="flex items-center gap-2 text-[#aebdb7]"><span className="h-2 w-2 rounded-full bg-[#40575a]" />Rejected <strong>{data.coverage.rejected}</strong></div></div></div>
-          <div className="border-t border-[#4b6060] pt-4"><div className="flex items-center justify-between text-xs text-[#bfcbc4]"><span>Last official-source run</span><span className="font-mono text-[10px]">{data.latestIngest ? relativeDate(data.latestIngest.finishedAt) : 'Never'}</span></div><div className="mt-2 flex items-center justify-between text-sm"><span>{data.latestIngest ? `Run #${data.latestIngest.runId}` : 'Awaiting first run'}</span><span className="text-[#d3b06b]">{data.latestIngest?.written ?? 0} written</span></div></div>
+          <div className={`rounded-2xl border p-6 text-[#f7f2e8] ${sourceIsCurrent ? 'border-[#283b40] bg-[#283b40]' : 'border-[#714f45] bg-[#3c3232]'}`} data-testid="panel-coverage">
+            <div className="mb-7 flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#c9a45a]">Source status</p><h2 className="mt-2 text-lg font-semibold">{sourceUnavailable ? 'County feed unavailable' : sourceIsCurrent ? 'Coverage you can trust' : sourceIsStale ? 'County permit data is stale' : 'Source status needs review'}</h2></div><ShieldCheck className={sourceIsCurrent ? 'text-[#d3b06b]' : 'text-[#e0a28f]'} size={21} strokeWidth={1.5} /></div>
+            {sourceIsCurrent ? <div className="mb-7 flex items-center gap-5"><div className="relative flex h-28 w-28 items-center justify-center rounded-full" style={{ background: `conic-gradient(#d3b06b ${verifiedPct}%, #708078 ${verifiedPct}% ${Math.min(verifiedPct + 18, 100)}%, #40575a ${Math.min(verifiedPct + 18, 100)}% 100%)` }}><div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#283b40] font-serif text-2xl">{verifiedPct}%</div></div><div className="space-y-2 text-xs"><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#d3b06b]" />Verified <strong>{data.coverage.verified}</strong></div><div className="flex items-center gap-2 text-[#c3cfcb]"><span className="h-2 w-2 rounded-full bg-[#708078]" />Review required <strong>{data.coverage.reviewRequired}</strong></div><div className="flex items-center gap-2 text-[#aebdb7]"><span className="h-2 w-2 rounded-full bg-[#40575a]" />Rejected <strong>{data.coverage.rejected}</strong></div></div></div> : <div className="mb-7 rounded-xl border border-[#76574d] bg-[#4b3937] p-4" data-testid="source-status-alert"><p className="text-sm font-semibold">{sourceUnavailable ? 'The last official-source attempt failed.' : sourceIsStale ? 'The official permit table is stale.' : 'No current official-source result is available.'}</p><p className="mt-2 text-xs leading-5 text-[#e7c7bc]">{sourceStatus.message ?? 'Retry the source update before treating county activity as current.'}</p><p className="mt-3 font-mono text-[10px] uppercase tracking-[0.1em] text-[#d6a092]">Existing records were not changed</p></div>}
+            <div className="border-t border-[#4b6060] pt-4"><div className="flex items-center justify-between text-xs text-[#bfcbc4]"><span>{sourceUnavailable ? 'Last failed attempt' : 'Last source attempt'}</span><span className="font-mono text-[10px]">{sourceStatus.lastAttemptAt ? relativeDate(sourceStatus.lastAttemptAt) : 'Never'}</span></div><div className="mt-2 flex items-center justify-between text-sm"><span>{sourceStatus.lastSuccessAt ? `Last freshness-verified success ${formatDate(sourceStatus.lastSuccessAt)}` : 'No freshness-verified success'}</span><span className={sourceIsCurrent ? 'text-[#d3b06b]' : 'text-[#e0a28f]'}>{sourceStateLabel(sourceStatus.state)}</span></div></div>
         </div>
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -307,9 +331,21 @@ function SignalsPage() {
 
 function SettingsPage() {
   const dashboard = useGetAtlasDashboard();
-  const ingest = useRunAtlasIngest();
+  const queryClient = useQueryClient();
+  const ingest = useRunAtlasIngest({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getGetAtlasDashboardQueryKey() });
+      },
+    },
+  });
   const run = () => ingest.mutate({ data: { limit: 250, promoteVerified: true } });
-  return <PageScaffold><PageTitle eyebrow="Configuration · controlled and reviewable" title="Sources & rules" description="Atlas keeps source access explicit and decision thresholds visible, so every call starts from a defensible signal." action={<button onClick={run} disabled={ingest.isPending} className="inline-flex items-center gap-2 rounded-lg border border-[#c5b17c] bg-[#f7f0dd] px-4 py-2.5 text-xs font-semibold text-[#6e5426] transition hover:bg-[#f1e4c4] disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[#c79b48]" data-testid="button-settings-ingest">{ingest.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} {ingest.isPending ? 'Running…' : 'Run source update'}</button>} /><div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]"><div className="space-y-4"><div className="rounded-2xl border border-[#ded8cd] bg-[#fffdf8] p-6"><div className="mb-6 flex items-center justify-between"><div><h2 className="font-semibold text-[#3e4c4f]">Official sources</h2><p className="mt-1 text-xs text-[#858b87]">Only configured sources can promote a record.</p></div><ShieldCheck className="text-[#2d6b56]" size={20} /></div><div className="space-y-3"><div className="flex items-center justify-between rounded-xl border border-[#e4dfd5] bg-[#fbf8f1] p-4"><div className="flex items-center gap-3"><div className="rounded-lg bg-[#e3eee7] p-2 text-[#2d6b56]"><Building2 size={16} /></div><div><p className="text-sm font-semibold text-[#495655]">Utah County permit records</p><p className="mt-1 text-[11px] text-[#878e88]">Permits · property context · ownership</p></div></div><span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-[#2d6b56]"><Check size={13} /> Connected</span></div><div className="flex items-center justify-between rounded-xl border border-[#e4dfd5] bg-[#fbf8f1] p-4"><div className="flex items-center gap-3"><div className="rounded-lg bg-[#f4e8c9] p-2 text-[#866224]"><Database size={16} /></div><div><p className="text-sm font-semibold text-[#495655]">Property & market value feed</p><p className="mt-1 text-[11px] text-[#878e88]">Assessed value · property type · location</p></div></div><span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-[#2d6b56]"><Check size={13} /> Connected</span></div></div></div><div className="rounded-2xl border border-[#ded8cd] bg-[#fffdf8] p-6"><div className="mb-5 flex items-center gap-3"><div className="rounded-lg bg-[#e9efe9] p-2 text-[#2d6b56]"><SlidersHorizontal size={16} /></div><div><h2 className="font-semibold text-[#3e4c4f]">Decision thresholds</h2><p className="mt-1 text-xs text-[#858b87]">The rules behind the call-ready queue.</p></div></div><div className="space-y-1">{[['Signal threshold', '≥ 0.78', 'Also requires a verified match and permit within 180 days'], ['Verification', 'Official match', 'Eligible for promotion'], ['Unknown product', 'Unclassified', 'No loan type inferred from a permit'], ['Estimated range', 'Directional', 'Never a commitment']].map(([label, value, detail]) => <div className="flex items-center justify-between border-t border-[#eee9df] py-3" key={label}><div><p className="text-xs font-semibold text-[#596461]">{label}</p><p className="mt-1 text-[10px] text-[#929891]">{detail}</p></div><span className="rounded-lg bg-[#f7f0dd] px-2 py-1 font-mono text-[11px] text-[#775925]">{value}</span></div>)}</div></div></div><div className="rounded-2xl border border-[#283b40] bg-[#283b40] p-6 text-[#f7f2e8]"><div className="flex items-center gap-3"><div className="rounded-lg bg-[#3d5557] p-2 text-[#d3b06b]"><Clock3 size={17} /></div><div><p className="font-semibold">Latest ingest result</p><p className="mt-1 text-xs text-[#b9c5bd]">The last controlled run across configured sources.</p></div></div>{dashboard.isLoading ? <div className="mt-7 space-y-3"><Skeleton className="h-8 bg-[#3a5153]" /><Skeleton className="h-8 bg-[#3a5153]" /><Skeleton className="h-8 bg-[#3a5153]" /></div> : dashboard.data?.latestIngest ? <div className="mt-7 space-y-3">{[['Run ID', `#${dashboard.data.latestIngest.runId}`], ['Records seen', dashboard.data.latestIngest.seen], ['Written', dashboard.data.latestIngest.written], ['Verified matches', dashboard.data.latestIngest.verifiedMatches], ['Review required', dashboard.data.latestIngest.reviewRequired], ['Finished', formatDate(dashboard.data.latestIngest.finishedAt, true)]].map(([label, value]) => <div className="flex items-center justify-between border-b border-[#40585a] pb-3 text-xs last:border-0" key={label}><span className="text-[#bdc9c1]">{label}</span><span className="font-mono text-[#e1c277]">{value}</span></div>)}</div> : <div className="mt-8 rounded-xl border border-dashed border-[#536b6a] p-6 text-center"><p className="text-sm text-[#dce4dc]">No source run yet.</p><p className="mt-1 text-xs text-[#aebdb5]">Start an update to establish the first baseline.</p></div>}<div className="mt-5 border-t border-[#40585a] pt-4 text-[11px] leading-5 text-[#aebdb5]">All source runs are bounded, logged, and safe to repeat. Promoted records require an official match.</div></div></div></PageScaffold>;
+  const sourceStatus = dashboard.data?.sourceStatus;
+  const sourceIsCurrent = sourceStatus?.state === 'CURRENT';
+  const sourceUnavailable = sourceStatus?.state === 'UNAVAILABLE';
+  const sourceClass = sourceStateClass(sourceStatus?.state ?? 'NEVER');
+  const sourceLabel = sourceStateLabel(sourceStatus?.state ?? 'NEVER');
+   return <PageScaffold><PageTitle eyebrow="Configuration · controlled and reviewable" title="Sources & rules" description="Atlas keeps source access explicit and decision thresholds visible, so every call starts from a defensible signal." action={<button onClick={run} disabled={ingest.isPending} className="inline-flex items-center gap-2 rounded-lg border border-[#c5b17c] bg-[#f7f0dd] px-4 py-2.5 text-xs font-semibold text-[#6e5426] transition hover:bg-[#f1e4c4] disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[#c79b48]" data-testid="button-settings-ingest">{ingest.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} {ingest.isPending ? 'Running…' : sourceUnavailable ? 'Retry official source' : 'Run source update'}</button>} /><div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]"><div className="space-y-4"><div className="rounded-2xl border border-[#ded8cd] bg-[#fffdf8] p-6"><div className="mb-6 flex items-center justify-between"><div><h2 className="font-semibold text-[#3e4c4f]">Official sources</h2><p className="mt-1 text-xs text-[#858b87]">Only a current, verified source run can promote a record.</p></div><ShieldCheck className={sourceIsCurrent ? 'text-[#2d6b56]' : 'text-[#a45342]'} size={20} /></div><div className="space-y-3"><div className="flex items-center justify-between rounded-xl border border-[#e4dfd5] bg-[#fbf8f1] p-4"><div className="flex items-center gap-3"><div className="rounded-lg bg-[#e3eee7] p-2 text-[#2d6b56]"><Building2 size={16} /></div><div><p className="text-sm font-semibold text-[#495655]">Utah County permit records</p><p className="mt-1 text-[11px] text-[#878e88]">Permits · property context · ownership</p></div></div><span className={`rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] ${sourceClass}`}>{sourceLabel}</span></div><div className="flex items-center justify-between rounded-xl border border-[#e4dfd5] bg-[#fbf8f1] p-4"><div className="flex items-center gap-3"><div className="rounded-lg bg-[#f4e8c9] p-2 text-[#866224]"><Database size={16} /></div><div><p className="text-sm font-semibold text-[#495655]">Property & market value feed</p><p className="mt-1 text-[11px] text-[#878e88]">Stored property context; no current feed claim</p></div></div><span className={`rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] ${sourceClass}`}>{sourceUnavailable ? 'Not verified' : sourceLabel}</span></div></div>{!sourceIsCurrent && <div className="mt-4 rounded-xl border border-[#e6c9bf] bg-[#fff8f4] p-4" data-testid="source-status-alert"><p className="text-sm font-semibold text-[#74463a]">{sourceUnavailable ? 'Last attempt failed' : sourceStatus?.state === 'STALE' ? 'Official permit data is stale' : 'Current source status is not established'}</p><p className="mt-1 text-xs leading-5 text-[#8f6256]">{sourceStatus?.message ?? 'Retry the official source before treating county activity as current.'}</p><p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#a45342]">Existing records and opportunities were not changed</p></div>}</div><div className="rounded-2xl border border-[#ded8cd] bg-[#fffdf8] p-6"><div className="mb-5 flex items-center gap-3"><div className="rounded-lg bg-[#e9efe9] p-2 text-[#2d6b56]"><SlidersHorizontal size={16} /></div><div><h2 className="font-semibold text-[#3e4c4f]">Decision thresholds</h2><p className="mt-1 text-xs text-[#858b87]">The rules behind the call-ready queue.</p></div></div><div className="space-y-1">{[['Signal threshold', '≥ 0.78', 'Also requires a verified match and permit within 180 days'], ['Verification', 'Official match', 'Eligible for promotion'], ['Unknown product', 'Unclassified', 'No loan type inferred from a permit'], ['Estimated range', 'Directional', 'Never a commitment']].map(([label, value, detail]) => <div className="flex items-center justify-between border-t border-[#eee9df] py-3" key={label}><div><p className="text-xs font-semibold text-[#596461]">{label}</p><p className="mt-1 text-[10px] text-[#929891]">{detail}</p></div><span className="rounded-lg bg-[#f7f0dd] px-2 py-1 font-mono text-[11px] text-[#775925]">{value}</span></div>)}</div></div></div><div className="rounded-2xl border border-[#283b40] bg-[#283b40] p-6 text-[#f7f2e8]"><div className="flex items-center gap-3"><div className="rounded-lg bg-[#3d5557] p-2 text-[#d3b06b]"><Clock3 size={17} /></div><div><p className="font-semibold">Latest ingest attempt</p><p className="mt-1 text-xs text-[#b9c5bd]">The last controlled run across configured sources.</p></div></div>{dashboard.isLoading ? <div className="mt-7 space-y-3"><Skeleton className="h-8 bg-[#3a5153]" /><Skeleton className="h-8 bg-[#3a5153]" /><Skeleton className="h-8 bg-[#3a5153]" /></div> : dashboard.data?.latestIngest ? <div className="mt-7 space-y-3">{[['Run ID', `#${dashboard.data.latestIngest.runId}`], ['Records seen', dashboard.data.latestIngest.seen], ['Written', dashboard.data.latestIngest.written], ['Verified matches', dashboard.data.latestIngest.verifiedMatches], ['Review required', dashboard.data.latestIngest.reviewRequired], ['Finished', formatDate(dashboard.data.latestIngest.finishedAt, true)], ['Source state', sourceLabel]].map(([label, value]) => <div className="flex items-center justify-between border-b border-[#40585a] pb-3 text-xs last:border-0" key={label}><span className="text-[#bdc9c1]">{label}</span><span className="font-mono text-[#e1c277]">{value}</span></div>)}</div> : <div className="mt-8 rounded-xl border border-dashed border-[#536b6a] p-6 text-center"><p className="text-sm text-[#dce4dc]">No source run yet.</p><p className="mt-1 text-xs text-[#aebdb5]">Start an update to establish the first baseline.</p></div>}<div className="mt-5 border-t border-[#40585a] pt-4 text-[11px] leading-5 text-[#aebdb5]">Failed attempts are logged without rewriting permits or opportunities. Promotion requires a current official match.</div></div></div></PageScaffold>;
 }
 
 function Shell({ children }: { children: ReactNode }) {

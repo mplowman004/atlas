@@ -27,6 +27,7 @@ import {
   toDate,
 } from "../services/utah-county";
 import { classifyProduct, isCommercialProperty, isCurrentPermit, MAX_PERMIT_AGE_DAYS, PROMOTION_THRESHOLD, scoreVerifiedSignal, shouldReplaceAnchor } from "../services/atlas-rules";
+import { sourceStatusFromRuns } from "../services/source-status";
 
 const router: IRouter = Router();
 
@@ -103,12 +104,14 @@ async function currentOpportunities() {
 
 router.get("/atlas/dashboard", async (_req, res, next) => {
   try {
-    const [opportunities, [perm], [prop], [latest]] = await Promise.all([
+    const [opportunities, [perm], [prop], recentRuns] = await Promise.all([
       currentOpportunities(),
       db.select({ n: count() }).from(atlasPermits),
       db.select({ n: count() }).from(atlasProperties),
-      db.select().from(atlasIngestRuns).orderBy(desc(atlasIngestRuns.id)).limit(1),
+      db.select().from(atlasIngestRuns).orderBy(desc(atlasIngestRuns.id)).limit(100),
     ]);
+    const latest = recentRuns[0];
+    const sourceStatus = sourceStatusFromRuns(recentRuns, atlasSources.permit);
     const rows = opportunities;
     const pipelineMap = new Map<string, { value: number; count: number }>();
     for (const row of rows) {
@@ -147,6 +150,7 @@ router.get("/atlas/dashboard", async (_req, res, next) => {
             rejected: latest.rejected,
           }
         : { verified: 0, reviewRequired: 0, rejected: 0 },
+      sourceStatus,
     });
     res.json(data);
   } catch (error) {
@@ -463,8 +467,40 @@ router.post("/atlas/ingest", async (req, res, next) => {
       }),
     );
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Utah County source failure";
     req.log.error({ err: error }, "Atlas official-source ingest failed");
-    next(error);
+    try {
+      const finishedAt = new Date();
+      const [run] = await db
+        .insert(atlasIngestRuns)
+        .values({
+          seen: 0,
+          written: 0,
+          verifiedMatches: 0,
+          reviewRequired: 0,
+          rejected: 0,
+          promoted: false,
+          startedAt,
+          finishedAt,
+          notes: `SOURCE_FAILED: ${message.slice(0, 500)}`,
+        })
+        .returning();
+      res.json(
+        RunAtlasIngestResponse.parse({
+          runId: run.id,
+          seen: 0,
+          written: 0,
+          verifiedMatches: 0,
+          reviewRequired: 0,
+          rejected: 0,
+          promoted: false,
+          startedAt: startedAt.toISOString(),
+          finishedAt: finishedAt.toISOString(),
+        }),
+      );
+    } catch (recordError) {
+      next(recordError);
+    }
   }
 });
 

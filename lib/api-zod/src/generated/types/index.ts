@@ -18,3 +18,5 @@ export * from './opportunity';
 export * from './pipelineBucket';
 export * from './referral';
 export * from './signalChange';
+export * from './sourceStatus';
+export * from './sourceStatusState';

@@ -48,6 +48,12 @@ export const GetAtlasDashboardResponse = zod.object({
   "verified": zod.number().int(),
   "reviewRequired": zod.number().int(),
   "rejected": zod.number().int()
+}),
+  "sourceStatus": zod.object({
+  "state": zod.enum(['CURRENT', 'STALE', 'UNAVAILABLE', 'NEVER']),
+  "lastAttemptAt": zod.coerce.date().nullable(),
+  "lastSuccessAt": zod.coerce.date().nullable(),
+  "message": zod.string().nullable()
 })
 })
 

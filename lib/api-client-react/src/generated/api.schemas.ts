@@ -43,11 +43,32 @@ export interface CoverageSummary {
   rejected: number;
 }
 
+export type SourceStatusState = typeof SourceStatusState[keyof typeof SourceStatusState];
+
+
+export const SourceStatusState = {
+  CURRENT: 'CURRENT',
+  STALE: 'STALE',
+  UNAVAILABLE: 'UNAVAILABLE',
+  NEVER: 'NEVER',
+} as const;
+
+export interface SourceStatus {
+  state: SourceStatusState;
+  /** @nullable */
+  lastAttemptAt: string | null;
+  /** @nullable */
+  lastSuccessAt: string | null;
+  /** @nullable */
+  message: string | null;
+}
+
 export interface DashboardSummary {
   counts: DashboardCounts;
   pipeline: PipelineBucket[];
   latestIngest: IngestResult | null;
   coverage: CoverageSummary;
+  sourceStatus: SourceStatus;
 }
 
 export interface Opportunity {
