@@ -42,6 +42,7 @@ import {
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { OremSourcePanel } from '@/components/orem-source-panel';
+import { OpportunitiesEmptyState, OpportunitiesSourceContext, SourceStatusSidebar } from '@/components/opportunities-source-context';
 import NotFound from '@/pages/not-found';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -51,6 +52,7 @@ const queryClient = new QueryClient();
 const navItems = [
   { href: '/', label: 'Morning brief', icon: Sparkles },
   { href: '/opportunities', label: 'Opportunities', icon: Target },
+  { href: '/orem-research', label: 'Orem research', icon: FileCheck2 },
   { href: '/referrals', label: 'Referrals', icon: UsersRound },
   { href: '/signals', label: 'Signals', icon: Activity },
   { href: '/settings', label: 'Sources & rules', icon: Settings2 },
@@ -166,6 +168,7 @@ function ErrorBlock({ retry }: { retry: () => void }) {
 }
 
 function EmptyBlock({ label }: { label: string }) {
+  if (label === 'opportunities') return <OpportunitiesEmptyState />;
   return (
     <div className="rounded-2xl border border-dashed border-[#d9d1c4] bg-[#fbf8f1] p-10 text-center" data-testid="state-empty">
       <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[#e9efe9] text-[#2d6b56]"><FileCheck2 size={18} /></div>
@@ -197,7 +200,7 @@ function SignalBadge({ severity }: { severity: string }) {
 function sourceStateLabel(state: string) {
   if (state === 'CURRENT') return 'Current';
   if (state === 'UNAVAILABLE') return 'Unavailable';
-  if (state === 'STALE') return 'Needs review';
+  if (state === 'STALE') return 'Stale';
   return 'Not established';
 }
 
@@ -314,9 +317,17 @@ function OpportunitiesPage() {
   const [minScore, setMinScore] = useState('');
   const params = useMemo(() => ({ ...(product ? { product } : {}), ...(status ? { status } : {}), ...(minScore ? { minScore: Number(minScore) } : {}), limit: 100 }), [product, status, minScore]);
   const query = useListAtlasOpportunities(params, { query: { queryKey: getListAtlasOpportunitiesQueryKey(params) } });
-  return <PageScaffold><PageTitle eyebrow="Prioritized by fit · 100 records max" title="Opportunities" description="Recent verified property signals for research. A permit alone does not establish financing need." action={<div className="flex items-center gap-2 rounded-lg border border-[#ded8cd] bg-[#fffdf8] px-3 py-2 text-xs text-[#77807b]"><Database size={14} className="text-[#a36d25]" /> Utah County coverage</div>} />
+  return <PageScaffold><PageTitle eyebrow="Current lead queue · source-gated" title="Opportunities" description="Only current, source-verified and lending-qualified evidence can appear here. Historical Orem permit research is separate and does not establish financing need." />
+    <OpportunitiesSourceContext />
     <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-[#ded8cd] bg-[#fffdf8] p-3 md:flex-row md:items-center"><div className="flex items-center gap-2 px-2 text-xs font-semibold text-[#5a6361]"><SlidersHorizontal size={15} /> Filter view</div><select value={product} onChange={(event) => setProduct(event.target.value)} className="rounded-lg border border-[#e1dbd0] bg-[#fcfaf4] px-3 py-2 text-xs text-[#4f5958] outline-none focus:ring-2 focus:ring-[#c79b48]" data-testid="select-filter-product"><option value="">All products</option><option value="REFINANCE">Refinance</option><option value="EQUIPMENT">Equipment</option><option value="INVESTOR_CRE">Investor CRE</option><option value="OWNER_OCCUPIED_CRE">Owner-occupied CRE</option><option value="WORKING_CAP_LOC">Working-capital LOC</option></select><select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-[#e1dbd0] bg-[#fcfaf4] px-3 py-2 text-xs text-[#4f5958] outline-none focus:ring-2 focus:ring-[#c79b48]" data-testid="select-filter-status"><option value="">All statuses</option><option value="NEW">New</option><option value="REVIEW">Review</option><option value="CONTACTED">Contacted</option></select><select value={minScore} onChange={(event) => setMinScore(event.target.value)} className="rounded-lg border border-[#e1dbd0] bg-[#fcfaf4] px-3 py-2 text-xs text-[#4f5958] outline-none focus:ring-2 focus:ring-[#c79b48]" data-testid="select-filter-score"><option value="">Any signal score</option><option value="0.8">80+ score</option><option value="0.65">65+ score</option><option value="0.5">50+ score</option></select><button onClick={() => { setProduct(''); setStatus(''); setMinScore(''); }} className="ml-auto inline-flex items-center gap-1.5 px-2 text-xs text-[#8b6b38] hover:text-[#5e4824]" data-testid="button-clear-filters"><X size={13} /> Clear</button></div>
     {query.isLoading ? <LoadingBlock rows={6} /> : query.isError ? <ErrorBlock retry={() => query.refetch()} /> : !query.data?.length ? <EmptyBlock label="opportunities" /> : <div className="overflow-hidden rounded-2xl border border-[#ded8cd] bg-[#fffdf8]"><div className="hidden grid-cols-[1.3fr_1.1fr_0.65fr_0.8fr_0.9fr] gap-4 border-b border-[#eee9df] bg-[#faf7f0] px-5 py-3 font-mono text-[9px] uppercase tracking-[0.13em] text-[#999b91] md:grid"><span>Company & context</span><span>Product hypothesis</span><span>Signal</span><span>Range</span><span>Verification</span></div><div className="divide-y divide-[#eee9df]">{query.data.map((opportunity) => <div key={opportunity.id} className="grid gap-4 px-5 py-4 transition hover:bg-[#fbf7ef] md:grid-cols-[1.3fr_1.1fr_0.65fr_0.8fr_0.9fr] md:items-center" data-testid={`row-opportunity-${opportunity.id}`}><div><div className="flex items-center gap-2"><span className="font-semibold text-[#364548]">{opportunity.company}</span><ExternalLink size={12} className="text-[#a3a49b]" /></div><p className="mt-1 flex items-center gap-1 text-[11px] text-[#858b87]"><MapPin size={11} /> {opportunity.location} · {opportunity.propertyType || 'Property context pending'}</p><p className="mt-2 line-clamp-1 text-xs text-[#777f7c]">{opportunity.reason}</p></div><div><p className="text-sm font-medium text-[#4c5b5b]">{opportunity.product}</p><p className="mt-1 font-mono text-[10px] text-[#9a9f97]">{opportunity.signalCount ?? 0} supporting signals</p></div><div><span className={`inline-flex min-w-12 items-center justify-center rounded-lg px-2 py-1.5 font-mono text-xs font-medium ${scoreTone(opportunity.score)}`}>{scoreLabel(opportunity.score)}</span></div><div><p className="font-mono text-xs text-[#4f5b5a]">{formatCurrency(opportunity.estimatedMin)}–{formatCurrency(opportunity.estimatedMax)}</p><p className="mt-1 text-[10px] text-[#9a9f97]">market {formatCurrency(opportunity.marketValue)}</p></div><div className="flex items-center justify-between gap-2 md:block"><span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-mono text-[9px] uppercase tracking-[0.08em] ${opportunity.verificationState.toLowerCase().includes('verified') ? 'bg-[#e3eee7] text-[#2c6752]' : 'bg-[#f4e8c9] text-[#866224]'}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{opportunity.verificationState}</span><span className="block mt-2 text-[10px] text-[#a0a39b]">{relativeDate(opportunity.updatedAt)}</span></div></div>)}</div></div>}
+  </PageScaffold>;
+}
+
+function OremResearchPage() {
+  return <PageScaffold>
+    <PageTitle eyebrow="Official city PDFs · research only" title="Orem permit research" description="Browse address-grouped commercial permits from the City of Orem's historical report through July 2026. These are not current, call-ready lending opportunities; parcel identity, financing intent and lending product are unverified." action={<Link href="/opportunities" className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#8b6b38] hover:underline" data-testid="link-back-to-opportunities">Back to opportunities <ChevronRight size={13} /></Link>} />
+    <OremSourcePanel showAll />
   </PageScaffold>;
 }
 
@@ -354,12 +365,41 @@ function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const activeLabel = navItems.find((item) => item.href === location)?.label ?? 'Atlas Lending';
-  return <div className="min-h-[100dvh] bg-[#f4f0e7] text-[#25343a]"><aside className={`fixed inset-y-0 left-0 z-40 flex w-[250px] flex-col bg-[#25343a] px-5 py-6 text-[#f5f0e5] transition-transform duration-200 md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}><div className="mb-10 flex items-center justify-between"><Link href="/" className="flex items-center gap-3" onClick={() => setMobileOpen(false)} data-testid="link-brand"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#d2ac61] text-[#25343a]"><Layers3 size={18} strokeWidth={2} /></span><span><span className="block font-serif text-xl leading-none">Atlas</span><span className="mt-1 block font-mono text-[9px] uppercase tracking-[0.2em] text-[#b9c8bf]">Lending intelligence</span></span></Link><button onClick={() => setMobileOpen(false)} className="text-[#aebdb4] md:hidden" aria-label="Close navigation" data-testid="button-close-navigation"><X size={18} /></button></div><div className="mb-3 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-[#78908b]">Workspace</div><nav className="space-y-1">{navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} className={`group flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${location === href ? 'bg-[#3a5053] font-semibold text-[#f7f1e6]' : 'text-[#b8c5bd] hover:bg-[#30464a] hover:text-[#f7f1e6]'}`} data-testid={`link-nav-${label.toLowerCase().replaceAll(' ', '-')}`}><Icon size={16} strokeWidth={location === href ? 2 : 1.7} className={location === href ? 'text-[#d6b46b]' : 'text-[#8fa49c]'} /><span>{label}</span>{location === href && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#d6b46b]" />}</Link>)}</nav><div className="mt-auto rounded-2xl border border-[#40585a] bg-[#2b4145] p-4"><div className="mb-3 flex items-center gap-2 text-[#d8b66e]"><ShieldCheck size={15} /><span className="font-mono text-[9px] uppercase tracking-[0.12em]">Source status</span></div><p className="text-xs leading-5 text-[#c1cec5]">County source status depends on the latest successful run.</p><div className="mt-3 flex items-center gap-2 text-[10px] text-[#9db1a7]"><span className="h-1.5 w-1.5 rounded-full bg-[#78af91]" /> Check latest run</div></div></aside><div className="md:pl-[250px]"><header className="sticky top-0 z-30 flex h-[70px] items-center justify-between border-b border-[#ded8cd] bg-[#f4f0e7]/95 px-5 backdrop-blur md:px-10"><div className="flex items-center gap-3"><button onClick={() => setMobileOpen(true)} className="rounded-lg p-2 text-[#566260] hover:bg-[#e9e4da] md:hidden" aria-label="Open navigation" data-testid="button-open-navigation"><Menu size={19} /></button><div className="md:hidden"><p className="font-serif text-xl">{activeLabel}</p></div><div className="hidden items-center gap-2 md:flex"><span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8b918c]">Utah County</span><span className="text-[#c5bba9]">/</span><span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#a36d25]">{activeLabel}</span></div></div><div className="flex items-center gap-4"><div className="hidden items-center gap-2 text-xs text-[#7e8782] sm:flex"><span className="h-2 w-2 rounded-full bg-[#d6b46b]" /> Check latest run</div><div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#dbe8df] font-mono text-[10px] font-medium text-[#2d6752]" data-testid="avatar-user">RM</div></div></header>{children}</div>{mobileOpen && <button className="fixed inset-0 z-30 bg-[#25343a]/30 md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation overlay" data-testid="button-navigation-overlay" />}</div>;
+  return (
+    <div className="min-h-[100dvh] bg-[#f4f0e7] text-[#25343a]">
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-[250px] flex-col overflow-y-auto bg-[#25343a] px-5 py-6 text-[#f5f0e5] transition-transform duration-200 md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="mb-10 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-3" onClick={() => setMobileOpen(false)} data-testid="link-brand">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#d2ac61] text-[#25343a]"><Layers3 size={18} strokeWidth={2} /></span>
+            <span><span className="block font-serif text-xl leading-none">Atlas</span><span className="mt-1 block font-mono text-[9px] uppercase tracking-[0.2em] text-[#b9c8bf]">Lending intelligence</span></span>
+          </Link>
+          <button onClick={() => setMobileOpen(false)} className="text-[#aebdb4] md:hidden" aria-label="Close navigation" data-testid="button-close-navigation"><X size={18} /></button>
+        </div>
+        <div className="mb-3 px-3 font-mono text-[9px] uppercase tracking-[0.18em] text-[#78908b]">Workspace</div>
+        <nav className="space-y-1" aria-label="Main navigation">
+          {navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} className={`group flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${location === href ? 'bg-[#3a5053] font-semibold text-[#f7f1e6]' : 'text-[#b8c5bd] hover:bg-[#30464a] hover:text-[#f7f1e6]'}`} data-testid={`link-nav-${label.toLowerCase().replaceAll(' ', '-')}`}><Icon size={16} strokeWidth={location === href ? 2 : 1.7} className={location === href ? 'text-[#d6b46b]' : 'text-[#8fa49c]'} /><span>{label}</span>{location === href && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#d6b46b]" />}</Link>)}
+        </nav>
+        <SourceStatusSidebar onNavigate={() => setMobileOpen(false)} />
+      </aside>
+      <div className="md:pl-[250px]">
+        <header className="sticky top-0 z-30 flex h-[70px] items-center justify-between border-b border-[#ded8cd] bg-[#f4f0e7]/95 px-5 backdrop-blur md:px-10">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setMobileOpen(true)} className="rounded-lg p-2 text-[#566260] hover:bg-[#e9e4da] md:hidden" aria-label="Open navigation" data-testid="button-open-navigation"><Menu size={19} /></button>
+            <div className="md:hidden"><p className="font-serif text-xl">{activeLabel}</p></div>
+            <div className="hidden items-center gap-2 md:flex"><span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8b918c]">{location === '/orem-research' ? 'City of Orem' : 'Utah County'}</span><span className="text-[#c5bba9]">/</span><span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#a36d25]">{activeLabel}</span></div>
+          </div>
+          <div className="flex items-center gap-4"><div className="hidden items-center gap-2 text-xs text-[#7e8782] sm:flex"><span className="h-2 w-2 rounded-full bg-[#d6b46b]" /> {location === '/orem-research' ? 'Historical research only' : 'Source health shown below'}</div><div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#dbe8df] font-mono text-[10px] font-medium text-[#2d6752]" data-testid="avatar-user">RM</div></div>
+        </header>
+        {children}
+      </div>
+      {mobileOpen && <button className="fixed inset-0 z-30 bg-[#25343a]/30 md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation overlay" data-testid="button-navigation-overlay" />}
+    </div>
+  );
 }
 
 function Router() {
   const [location] = useLocation();
-  return <ErrorBoundary resetKey={location}><Shell><Switch><Route path="/" component={BriefPanel} /><Route path="/opportunities" component={OpportunitiesPage} /><Route path="/referrals" component={ReferralsPage} /><Route path="/signals" component={SignalsPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></Shell></ErrorBoundary>;
+  return <ErrorBoundary resetKey={location}><Shell><Switch><Route path="/" component={BriefPanel} /><Route path="/opportunities" component={OpportunitiesPage} /><Route path="/orem-research" component={OremResearchPage} /><Route path="/referrals" component={ReferralsPage} /><Route path="/signals" component={SignalsPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></Shell></ErrorBoundary>;
 }
 
 function App() {
