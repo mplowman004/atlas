@@ -1,7 +1,7 @@
 const PARCEL_LAYER =
   "https://maps.utahcounty.gov/arcgis/rest/services/Pictometry/POL_Assr_TaxParcel/MapServer/0";
 const PERMIT_TABLE =
-  "https://maps200.utahcounty.gov/arcgis/rest/services/Assessor/Building_Permits_Recent/MapServer/0";
+  "https://maps200.utahcounty.gov/arcgis/rest/services/Assessor/Building_Permits/MapServer/1";
 
 export const atlasSources = {
   parcel: PARCEL_LAYER,
@@ -56,7 +56,7 @@ async function arcCount(base: string, where: string) {
 
 export async function fetchRecentPermits(limit: number) {
   const fields = [
-    "OBJECTID_1",
+    "ESRI_OID",
     "PERMITNO",
     "LOCALPERMITNO",
     "ACCOUNTNO",
@@ -65,6 +65,13 @@ export async function fetchRecentPermits(limit: number) {
     "PERMITDATE",
     "PERMITSTATUS",
     "PERMITWORKDATE",
+    "PERMITAMOUNT",
+    "PERMITREASON",
+    "PERMITREASONDETAIL",
+    "PERMITUSE",
+    "OWNERNAME",
+    "CONTRACTORCODE",
+    "LENDERCODE",
   ].join(",");
   // A bounded date predicate prevents an old first page from masquerading as
   // the newest activity when the ArcGIS layer cannot honor ORDER BY.
@@ -79,17 +86,17 @@ export async function fetchRecentPermits(limit: number) {
   const all: ArcFeature[] = [];
   for (let offset = 0; offset < total; offset += 500) {
     const page = await arcQuery(PERMIT_TABLE, { where, outFields: fields,
-      orderByFields: "PERMITDATE DESC, OBJECTID_1 DESC", resultOffset: offset,
+      orderByFields: "PERMITDATE DESC, ESRI_OID DESC", resultOffset: offset,
       resultRecordCount: Math.min(500, total - offset) });
     if (page.length !== Math.min(500, total - offset))
       throw new Error(`Utah County permit page incomplete at offset ${offset}`);
     all.push(...page);
   }
-  if (new Set(all.map(f => String(f.attributes.OBJECTID_1))).size !== total)
+  if (new Set(all.map(f => String(f.attributes.ESRI_OID))).size !== total)
     throw new Error("Utah County permit pagination returned duplicate or missing identifiers");
   all.sort((a, b) => (toDate(b.attributes.PERMITDATE)?.getTime() ?? 0) -
     (toDate(a.attributes.PERMITDATE)?.getTime() ?? 0) ||
-    Number(b.attributes.OBJECTID_1 ?? 0) - Number(a.attributes.OBJECTID_1 ?? 0));
+    Number(b.attributes.ESRI_OID ?? 0) - Number(a.attributes.ESRI_OID ?? 0));
   return all.slice(0, Math.min(limit, 1000));
 }
 
