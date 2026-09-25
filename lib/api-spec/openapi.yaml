@@ -44,6 +44,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
+  /atlas/orem/source:
+    get:
+      operationId: getOremSourceReport
+      tags: [dashboard]
+      summary: Read-only City of Orem July 2026 permit report
+      description: Official city PDF evidence, not Utah County-wide coverage or promoted lending opportunities.
+      responses:
+        "200":
+          description: Validated, deduplicated Orem permit signals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OremSourceReport"
+        "503":
+          description: Official PDF unavailable or failed verification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OremSourceError"
   /atlas/opportunities:
     get:
       operationId: listAtlasOpportunities
@@ -200,6 +219,76 @@ components:
         lastAttemptAt: { type: ["string", "null"], format: date-time }
         lastSuccessAt: { type: ["string", "null"], format: date-time }
         message: { type: ["string", "null"] }
+    OremSourceError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    OremSourceReport:
+      type: object
+      required: [name, scope, reportThrough, freshness, freshnessMessage, cityPageUrl, monthlyPdfUrl, cumulativePdfUrl, signalCount, propertyCount, properties]
+      properties:
+        name: { type: string }
+        scope: { type: string }
+        reportThrough: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        freshness:
+          type: string
+          enum: [CURRENT_REPORT, LAGGING_REPORT]
+        freshnessMessage: { type: string }
+        cityPageUrl: { type: string, format: uri }
+        monthlyPdfUrl: { type: string, format: uri }
+        cumulativePdfUrl: { type: string, format: uri }
+        signalCount: { type: integer }
+        propertyCount: { type: integer }
+        properties:
+          type: array
+          items:
+            $ref: "#/components/schemas/OremPropertySignals"
+    OremPropertySignals:
+      type: object
+      required: [propertyKey, siteAddress, latestPermitDate, signalCount, totalValuation, score, product, permits]
+      properties:
+        propertyKey: { type: string }
+        siteAddress: { type: string }
+        latestPermitDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        signalCount: { type: integer }
+        totalValuation: { type: number }
+        score: { type: number, minimum: 0, maximum: 1 }
+        product:
+          type: string
+          enum: [UNKNOWN]
+        permits:
+          type: array
+          items:
+            $ref: "#/components/schemas/OremPermitSignal"
+    OremPermitSignal:
+      type: object
+      required: [permitId, permitDate, permitType, builder, siteAddress, valuation, score, classification, product, sources]
+      properties:
+        permitId: { type: string }
+        permitDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        permitType: { type: string }
+        builder: { type: string }
+        siteAddress: { type: string }
+        valuation: { type: number }
+        score: { type: number, minimum: 0, maximum: 1 }
+        classification:
+          type: string
+          enum: [COMMERCIAL]
+        product:
+          type: string
+          enum: [UNKNOWN]
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/OremPdfCitation"
+    OremPdfCitation:
+      type: object
+      required: [url, page, row]
+      properties:
+        url: { type: string, format: uri }
+        page: { type: integer, minimum: 1 }
+        row: { type: integer, minimum: 1 }
     Opportunity:
       type: object
       required: [id, company, product, score, status, verificationState, reason, location, updatedAt]

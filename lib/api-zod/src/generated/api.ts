@@ -59,6 +59,62 @@ export const GetAtlasDashboardResponse = zod.object({
 
 
 /**
+ * Official city PDF evidence, not Utah County-wide coverage or promoted lending opportunities.
+ * @summary Read-only City of Orem July 2026 permit report
+ */
+export const getOremSourceReportResponseReportThroughRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getOremSourceReportResponsePropertiesItemLatestPermitDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getOremSourceReportResponsePropertiesItemScoreMin = 0;
+export const getOremSourceReportResponsePropertiesItemScoreMax = 1;
+
+export const getOremSourceReportResponsePropertiesItemPermitsItemPermitDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getOremSourceReportResponsePropertiesItemPermitsItemScoreMin = 0;
+export const getOremSourceReportResponsePropertiesItemPermitsItemScoreMax = 1;
+
+
+
+
+
+export const GetOremSourceReportResponse = zod.object({
+  "name": zod.string(),
+  "scope": zod.string(),
+  "reportThrough": zod.string().regex(getOremSourceReportResponseReportThroughRegExp),
+  "freshness": zod.enum(['CURRENT_REPORT', 'LAGGING_REPORT']),
+  "freshnessMessage": zod.string(),
+  "cityPageUrl": zod.string().url(),
+  "monthlyPdfUrl": zod.string().url(),
+  "cumulativePdfUrl": zod.string().url(),
+  "signalCount": zod.number().int(),
+  "propertyCount": zod.number().int(),
+  "properties": zod.array(zod.object({
+  "propertyKey": zod.string(),
+  "siteAddress": zod.string(),
+  "latestPermitDate": zod.string().regex(getOremSourceReportResponsePropertiesItemLatestPermitDateRegExp),
+  "signalCount": zod.number().int(),
+  "totalValuation": zod.number(),
+  "score": zod.number().min(getOremSourceReportResponsePropertiesItemScoreMin).max(getOremSourceReportResponsePropertiesItemScoreMax),
+  "product": zod.enum(['UNKNOWN']),
+  "permits": zod.array(zod.object({
+  "permitId": zod.string(),
+  "permitDate": zod.string().regex(getOremSourceReportResponsePropertiesItemPermitsItemPermitDateRegExp),
+  "permitType": zod.string(),
+  "builder": zod.string(),
+  "siteAddress": zod.string(),
+  "valuation": zod.number(),
+  "score": zod.number().min(getOremSourceReportResponsePropertiesItemPermitsItemScoreMin).max(getOremSourceReportResponsePropertiesItemPermitsItemScoreMax),
+  "classification": zod.enum(['COMMERCIAL']),
+  "product": zod.enum(['UNKNOWN']),
+  "sources": zod.array(zod.object({
+  "url": zod.string().url(),
+  "page": zod.number().int().min(1),
+  "row": zod.number().int().min(1)
+}))
+}))
+}))
+})
+
+
+/**
  * @summary List prioritized lending opportunities
  */
 export const listAtlasOpportunitiesQueryMinScoreMin = 0;

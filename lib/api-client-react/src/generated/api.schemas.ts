@@ -71,6 +71,96 @@ export interface DashboardSummary {
   sourceStatus: SourceStatus;
 }
 
+export interface OremSourceError {
+  error: string;
+}
+
+export type OremSourceReportFreshness = typeof OremSourceReportFreshness[keyof typeof OremSourceReportFreshness];
+
+
+export const OremSourceReportFreshness = {
+  CURRENT_REPORT: 'CURRENT_REPORT',
+  LAGGING_REPORT: 'LAGGING_REPORT',
+} as const;
+
+export type OremPropertySignalsProduct = typeof OremPropertySignalsProduct[keyof typeof OremPropertySignalsProduct];
+
+
+export const OremPropertySignalsProduct = {
+  UNKNOWN: 'UNKNOWN',
+} as const;
+
+export type OremPermitSignalClassification = typeof OremPermitSignalClassification[keyof typeof OremPermitSignalClassification];
+
+
+export const OremPermitSignalClassification = {
+  COMMERCIAL: 'COMMERCIAL',
+} as const;
+
+export type OremPermitSignalProduct = typeof OremPermitSignalProduct[keyof typeof OremPermitSignalProduct];
+
+
+export const OremPermitSignalProduct = {
+  UNKNOWN: 'UNKNOWN',
+} as const;
+
+export interface OremPdfCitation {
+  url: string;
+  /** @minimum 1 */
+  page: number;
+  /** @minimum 1 */
+  row: number;
+}
+
+export interface OremPermitSignal {
+  permitId: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  permitDate: string;
+  permitType: string;
+  builder: string;
+  siteAddress: string;
+  valuation: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  score: number;
+  classification: OremPermitSignalClassification;
+  product: OremPermitSignalProduct;
+  sources: OremPdfCitation[];
+}
+
+export interface OremPropertySignals {
+  propertyKey: string;
+  siteAddress: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  latestPermitDate: string;
+  signalCount: number;
+  totalValuation: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  score: number;
+  product: OremPropertySignalsProduct;
+  permits: OremPermitSignal[];
+}
+
+export interface OremSourceReport {
+  name: string;
+  scope: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  reportThrough: string;
+  freshness: OremSourceReportFreshness;
+  freshnessMessage: string;
+  cityPageUrl: string;
+  monthlyPdfUrl: string;
+  cumulativePdfUrl: string;
+  signalCount: number;
+  propertyCount: number;
+  properties: OremPropertySignals[];
+}
+
 export interface Opportunity {
   id: number;
   company: string;

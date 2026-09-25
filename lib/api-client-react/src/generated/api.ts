@@ -27,6 +27,8 @@ import type {
   IngestResult,
   ListAtlasOpportunitiesParams,
   Opportunity,
+  OremSourceError,
+  OremSourceReport,
   Referral,
   SignalChange
 } from './api.schemas';
@@ -201,6 +203,84 @@ export function useGetAtlasDashboard<TData = Awaited<ReturnType<typeof getAtlasD
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAtlasDashboardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetOremSourceReportUrl = () => {
+
+
+
+
+  return `/api/atlas/orem/source`
+}
+
+/**
+ * Official city PDF evidence, not Utah County-wide coverage or promoted lending opportunities.
+ * @summary Read-only City of Orem July 2026 permit report
+ */
+export const getOremSourceReport = async ( options?: Parameters<typeof customFetch>[1]): Promise<OremSourceReport> => {
+
+  return customFetch<OremSourceReport>(getGetOremSourceReportUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOremSourceReportQueryKey = () => {
+    return [
+    `/api/atlas/orem/source`
+    ] as const;
+    }
+
+
+export const getGetOremSourceReportQueryOptions = <TData = Awaited<ReturnType<typeof getOremSourceReport>>, TError = ErrorType<OremSourceError>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOremSourceReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOremSourceReportQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOremSourceReport>>> = ({ signal }) => getOremSourceReport({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOremSourceReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOremSourceReportQueryResult = NonNullable<Awaited<ReturnType<typeof getOremSourceReport>>>
+export type GetOremSourceReportQueryError = ErrorType<OremSourceError>
+
+
+/**
+ * @summary Read-only City of Orem July 2026 permit report
+ */
+
+export function useGetOremSourceReport<TData = Awaited<ReturnType<typeof getOremSourceReport>>, TError = ErrorType<OremSourceError>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOremSourceReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOremSourceReportQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

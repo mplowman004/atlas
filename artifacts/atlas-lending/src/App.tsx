@@ -41,6 +41,7 @@ import {
   useRunAtlasIngest,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { OremSourcePanel } from '@/components/orem-source-panel';
 import NotFound from '@/pages/not-found';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -264,6 +265,7 @@ function BriefPanel() {
         <StatCard label="Property records" value={data.counts.properties.toLocaleString()} note={`${data.counts.permits} permits`} icon={Building2} accent="rust" sourceIsCurrent={sourceIsCurrent} />
         <StatCard label="Follow-ups due" value={data.counts.followUps} note="this week" icon={Bell} accent="green" sourceIsCurrent={sourceIsCurrent} />
       </div>
+      <OremSourcePanel />
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
         <div className="rounded-2xl border border-[#ded8cd] bg-[#fffdf8] p-6" data-testid="panel-pipeline">
           <SectionHeading title="Pipeline by lending hypothesis" detail="Only products with explicit source evidence" />
@@ -279,7 +281,7 @@ function BriefPanel() {
           <div className="mt-8 border-t border-[#eee9df] pt-4 text-[11px] text-[#858b87]">Value is a directional estimate, not a commitment. Confirm before outreach.</div>
         </div>
           <div className={`rounded-2xl border p-6 text-[#f7f2e8] ${sourceIsCurrent ? 'border-[#283b40] bg-[#283b40]' : 'border-[#714f45] bg-[#3c3232]'}`} data-testid="panel-coverage">
-            <div className="mb-7 flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#c9a45a]">Source status</p><h2 className="mt-2 text-lg font-semibold">{sourceUnavailable ? 'County feed unavailable' : sourceIsCurrent ? 'Coverage you can trust' : sourceIsStale ? 'County permit data is stale' : 'Source status needs review'}</h2></div><ShieldCheck className={sourceIsCurrent ? 'text-[#d3b06b]' : 'text-[#e0a28f]'} size={21} strokeWidth={1.5} /></div>
+            <div className="mb-7 flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#c9a45a]">Utah County GIS · source status</p><h2 className="mt-2 text-lg font-semibold">{sourceUnavailable ? 'County feed unavailable' : sourceIsCurrent ? 'Coverage you can trust' : sourceIsStale ? 'County permit data is stale' : 'Source status needs review'}</h2></div><ShieldCheck className={sourceIsCurrent ? 'text-[#d3b06b]' : 'text-[#e0a28f]'} size={21} strokeWidth={1.5} /></div>
             {sourceIsCurrent ? <div className="mb-7 flex items-center gap-5"><div className="relative flex h-28 w-28 items-center justify-center rounded-full" style={{ background: `conic-gradient(#d3b06b ${verifiedPct}%, #708078 ${verifiedPct}% ${Math.min(verifiedPct + 18, 100)}%, #40575a ${Math.min(verifiedPct + 18, 100)}% 100%)` }}><div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#283b40] font-serif text-2xl">{verifiedPct}%</div></div><div className="space-y-2 text-xs"><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#d3b06b]" />Verified <strong>{data.coverage.verified}</strong></div><div className="flex items-center gap-2 text-[#c3cfcb]"><span className="h-2 w-2 rounded-full bg-[#708078]" />Review required <strong>{data.coverage.reviewRequired}</strong></div><div className="flex items-center gap-2 text-[#aebdb7]"><span className="h-2 w-2 rounded-full bg-[#40575a]" />Rejected <strong>{data.coverage.rejected}</strong></div></div></div> : <div className="mb-7 rounded-xl border border-[#76574d] bg-[#4b3937] p-4" data-testid="source-status-alert"><p className="text-sm font-semibold">{sourceUnavailable ? 'The last official-source attempt failed.' : sourceIsStale ? 'The official permit table is stale.' : 'No current official-source result is available.'}</p><p className="mt-2 text-xs leading-5 text-[#e7c7bc]">{sourceStatus.message ?? 'Retry the source update before treating county activity as current.'}</p><p className="mt-3 font-mono text-[10px] uppercase tracking-[0.1em] text-[#d6a092]">Existing records were not changed</p></div>}
             <div className="border-t border-[#4b6060] pt-4"><div className="flex items-center justify-between text-xs text-[#bfcbc4]"><span>{sourceUnavailable ? 'Last failed attempt' : 'Last source attempt'}</span><span className="font-mono text-[10px]">{sourceStatus.lastAttemptAt ? relativeDate(sourceStatus.lastAttemptAt) : 'Never'}</span></div><div className="mt-2 flex items-center justify-between text-sm"><span>{sourceStatus.lastSuccessAt ? `Last freshness-verified success ${formatDate(sourceStatus.lastSuccessAt)}` : 'No freshness-verified success'}</span><span className={sourceIsCurrent ? 'text-[#d3b06b]' : 'text-[#e0a28f]'}>{sourceStateLabel(sourceStatus.state)}</span></div></div>
         </div>

@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import {
   GetAtlasDashboardResponse,
+  GetOremSourceReportResponse,
   ListAtlasFollowUpsResponse,
   ListAtlasOpportunitiesQueryParams,
   ListAtlasOpportunitiesResponse,
@@ -28,8 +29,71 @@ import {
 } from "../services/utah-county";
 import { classifyProduct, isCommercialProperty, isCurrentPermit, MAX_PERMIT_AGE_DAYS, PROMOTION_THRESHOLD, scoreVerifiedSignal, shouldReplaceAnchor } from "../services/atlas-rules";
 import { sourceStatusFromRuns } from "../services/source-status";
+import { getOremReport, OREM_JULY_PDF_URL, OREM_JANUARY_JULY_PDF_URL } from "../services/orem-permits";
 
 const router: IRouter = Router();
+
+router.get("/atlas/orem/source", async (req, res): Promise<void> => {
+  try {
+    const report = await getOremReport();
+    const now = new Date();
+    const lastCompleteMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+    const freshness = new Date(`${report.reportThrough}T00:00:00Z`) >= lastCompleteMonth
+      ? "CURRENT_REPORT" : "LAGGING_REPORT";
+    const permitsByAddress = new Map<string, typeof report.permits>();
+    for (const permit of report.permits) {
+      const items = permitsByAddress.get(permit.normalizedAddress) ?? [];
+      items.push(permit);
+      permitsByAddress.set(permit.normalizedAddress, items);
+    }
+    const properties = report.groups.map(group => {
+      const permits = (permitsByAddress.get(group.normalizedAddress) ?? [])
+        .slice().sort((a, b) => b.date.localeCompare(a.date) || a.permitId.localeCompare(b.permitId));
+      return {
+        propertyKey: group.normalizedAddress,
+        siteAddress: group.address,
+        latestPermitDate: permits[0].date,
+        signalCount: group.permitCount,
+        totalValuation: group.totalValuation,
+        score: Math.max(...permits.map(permit => permit.score)),
+        product: "UNKNOWN" as const,
+        permits: permits.map(permit => ({
+          permitId: permit.permitId,
+          permitDate: permit.date,
+          permitType: permit.permitType,
+          builder: permit.builder,
+          siteAddress: permit.address,
+          valuation: permit.valuation,
+          score: permit.score,
+          classification: permit.classification,
+          product: permit.product,
+          sources: permit.provenance,
+        })),
+      };
+    }).sort((a, b) => b.latestPermitDate.localeCompare(a.latestPermitDate) ||
+      a.propertyKey.localeCompare(b.propertyKey));
+    res.json(GetOremSourceReportResponse.parse({
+      name: report.source,
+      scope: report.sourceScope,
+      reportThrough: report.reportThrough,
+      freshness,
+      freshnessMessage: freshness === "LAGGING_REPORT"
+        ? "This fixed July 2026 city report does not establish activity after July 31. Check the City of Orem page for newer reports."
+        : "Monthly city snapshot through July 2026; not a live permit feed.",
+      cityPageUrl: "https://orem.gov/buildingsafety",
+      monthlyPdfUrl: OREM_JULY_PDF_URL,
+      cumulativePdfUrl: OREM_JANUARY_JULY_PDF_URL,
+      signalCount: report.totalValidatedSignals,
+      propertyCount: report.groupCount,
+      properties,
+    }));
+  } catch (error) {
+    req.log.warn({ err: error }, "Official City of Orem PDF verification failed");
+    res.status(503).json({
+      error: "Official City of Orem PDF could not be verified; no city permits displayed",
+    });
+  }
+});
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
