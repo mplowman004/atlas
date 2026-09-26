@@ -13,6 +13,12 @@ function countyLabel(state?: string) {
   return 'Not verified';
 }
 
+function reportMonth(value: string) {
+  return new Date(`${value}T12:00:00Z`).toLocaleDateString('en-US', {
+    month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
 export function OpportunitiesSourceContext() {
   const county = useGetAtlasDashboard();
   const orem = useGetOremSourceReport({
@@ -43,13 +49,17 @@ export function OpportunitiesSourceContext() {
           <FileCheck2 size={16} className="text-[#2d6b56]" />
           <h2 className="text-sm font-semibold text-[#314a3f]">City of Orem PDFs</h2>
           <span className="rounded-full bg-[#e3eee7] px-2 py-1 font-mono text-[10px] font-semibold uppercase text-[#2d6b56]" data-testid="badge-orem-scope">
-            Orem only · historical
+            Orem only · research
+          </span>
+          <span className="rounded-full bg-[#f1e6d3] px-2 py-1 font-mono text-[10px] font-semibold uppercase text-[#755a2f]" data-testid="badge-orem-freshness">
+            {orem.isLoading ? 'Checking report' : orem.isError || !orem.data ? 'Unavailable' :
+              orem.data.freshness === 'CURRENT_REPORT' ? 'Latest complete month' : 'Lagging report'}
           </span>
         </div>
         <p className="mt-2 text-xs leading-5 text-[#5e7167]" data-testid="text-orem-status">
-          {orem.isLoading ? 'Checking the official July 2026 permits…' :
-            orem.isError || !orem.data ? 'July 2026 PDF evidence is unavailable for verification right now; no city permits are shown as leads.' :
-            `${orem.data.propertyCount} grouped site addresses · ${orem.data.signalCount} commercial permit signals through July 2026.`}
+          {orem.isLoading ? 'Checking the official City of Orem PDFs…' :
+            orem.isError || !orem.data ? 'The city PDFs are unavailable for verification right now; no city permits are shown as leads.' :
+            `${orem.data.propertyCount} grouped site addresses · ${orem.data.signalCount} commercial permit signals through ${reportMonth(orem.data.reportThrough)}.`}
           {' '}Research only: neither financing intent nor a lending product is verified.
         </p>
         <Link href="/orem-research" className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#2d6b56] hover:underline" data-testid="link-orem-research-from-opportunities">
@@ -76,7 +86,7 @@ export function OpportunitiesEmptyState() {
           : 'Only current, verified evidence can enter this queue. Try clearing filters, or inspect the separate city permit research.'}
       </p>
       <p className="mx-auto mt-2 max-w-xl text-xs leading-5 text-[#827b6e]">
-        Stale county records and historical Orem permits are not call-ready opportunities. Permit valuation is not a loan amount; lending product remains unknown without evidence.
+        Stale county records and Orem monthly permit snapshots are not call-ready opportunities. Permit valuation is not a loan amount; lending product remains unknown without evidence.
       </p>
       <Link href="/orem-research" className="mt-5 inline-flex items-center gap-2 rounded-lg border border-[#b7cfbf] bg-[#e3eee7] px-4 py-2.5 text-xs font-semibold text-[#2d6b56] hover:bg-[#d6e8da]" data-testid="link-orem-research-from-empty">
         Explore Orem permit research <ArrowRight size={14} />
@@ -87,6 +97,9 @@ export function OpportunitiesEmptyState() {
 
 export function SourceStatusSidebar({ onNavigate }: { onNavigate: () => void }) {
   const county = useGetAtlasDashboard();
+  const orem = useGetOremSourceReport({
+    query: { queryKey: getGetOremSourceReportQueryKey(), staleTime: 15 * 60 * 1000, retry: 1 },
+  });
   const countyState = county.data?.sourceStatus?.state;
 
   return (
@@ -106,9 +119,12 @@ export function SourceStatusSidebar({ onNavigate }: { onNavigate: () => void }) 
       </p>
       <div className="mt-3 border-t border-[#40585a] pt-3">
         <Link href="/orem-research" onClick={onNavigate} className="text-xs font-semibold text-[#e1dfc8] hover:underline" data-testid="link-orem-research-sidebar">
-          Orem · July 2026 research <ArrowRight className="inline" size={12} />
+          Orem · {orem.data ? reportMonth(orem.data.reportThrough) : 'permit'} research <ArrowRight className="inline" size={12} />
         </Link>
-        <p className="mt-1 text-[10px] leading-4 text-[#afc0b7]">Orem only · historical permits, not lending leads.</p>
+        <p className="mt-1 text-[10px] leading-4 text-[#afc0b7]" data-testid="text-sidebar-orem-freshness">
+          Orem only · {orem.isLoading ? 'checking official PDFs' : orem.isError || !orem.data ? 'report unavailable' :
+            orem.data.freshness === 'CURRENT_REPORT' ? 'latest complete-month report' : 'lagging report'} · research, not leads.
+        </p>
       </div>
     </div>
   );

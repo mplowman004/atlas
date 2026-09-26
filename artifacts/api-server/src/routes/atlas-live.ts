@@ -29,7 +29,7 @@ import {
 } from "../services/utah-county";
 import { classifyProduct, isCommercialProperty, isCurrentPermit, MAX_PERMIT_AGE_DAYS, PROMOTION_THRESHOLD, scoreVerifiedSignal, shouldReplaceAnchor } from "../services/atlas-rules";
 import { sourceStatusFromRuns } from "../services/source-status";
-import { getOremReport, OREM_JULY_PDF_URL, OREM_JANUARY_JULY_PDF_URL } from "../services/orem-permits";
+import { getOremReport, OREM_AUGUST_PDF_URL, OREM_JANUARY_AUGUST_PDF_URL } from "../services/orem-permits";
 
 const router: IRouter = Router();
 
@@ -40,6 +40,8 @@ router.get("/atlas/orem/source", async (req, res): Promise<void> => {
     const lastCompleteMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
     const freshness = new Date(`${report.reportThrough}T00:00:00Z`) >= lastCompleteMonth
       ? "CURRENT_REPORT" : "LAGGING_REPORT";
+    const reportDate = new Date(`${report.reportThrough}T12:00:00Z`)
+      .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
     const permitsByAddress = new Map<string, typeof report.permits>();
     for (const permit of report.permits) {
       const items = permitsByAddress.get(permit.normalizedAddress) ?? [];
@@ -78,11 +80,11 @@ router.get("/atlas/orem/source", async (req, res): Promise<void> => {
       reportThrough: report.reportThrough,
       freshness,
       freshnessMessage: freshness === "LAGGING_REPORT"
-        ? "This fixed July 2026 city report does not establish activity after July 31. Check the City of Orem page for newer reports."
-        : "Monthly city snapshot through July 2026; not a live permit feed.",
+        ? `This verified city report does not establish activity after ${reportDate}. Check the City of Orem page for newer reports.`
+        : `Latest complete-month city snapshot through ${reportDate}; not a live permit feed or a lending lead.`,
       cityPageUrl: "https://orem.gov/buildingsafety",
-      monthlyPdfUrl: OREM_JULY_PDF_URL,
-      cumulativePdfUrl: OREM_JANUARY_JULY_PDF_URL,
+      monthlyPdfUrl: OREM_AUGUST_PDF_URL,
+      cumulativePdfUrl: OREM_JANUARY_AUGUST_PDF_URL,
       signalCount: report.totalValidatedSignals,
       propertyCount: report.groupCount,
       properties,

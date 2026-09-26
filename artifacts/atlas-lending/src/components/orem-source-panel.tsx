@@ -11,6 +11,11 @@ const dateLabel = (value: string) =>
 const usd = (value: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
 
+const monthLabel = (value: string) =>
+  new Date(`${value}T12:00:00Z`).toLocaleDateString('en-US', {
+    month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+
 export function OremSourcePanel({ showAll = false }: { showAll?: boolean }) {
   const [search, setSearch] = useState('');
   const report = useGetOremSourceReport({
@@ -52,7 +57,7 @@ export function OremSourcePanel({ showAll = false }: { showAll?: boolean }) {
       ) : (
         <>
           <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[#eadfca] bg-[#fbf8f1] p-3 text-xs text-[#626d66]">
-            <span className="font-semibold text-[#6e5426]">{report.data.freshness === 'LAGGING_REPORT' ? 'Historical snapshot' : 'Latest report window'}</span>
+             <span className="font-semibold text-[#6e5426]" data-testid="badge-orem-report-health">{report.data.freshness === 'LAGGING_REPORT' ? 'Lagging monthly report' : 'Latest complete-month report'}</span>
             <span>Report through {dateLabel(report.data.reportThrough)}</span>
              <span>{report.data.propertyCount} grouped site addresses · {report.data.signalCount} commercial permit signals</span>
           </div>
@@ -84,7 +89,7 @@ export function OremSourcePanel({ showAll = false }: { showAll?: boolean }) {
                       <div className="flex flex-wrap gap-x-3">
                         {permit.sources.map((source) => (
                           <a key={`${source.url}-${source.page}-${source.row}`} href={`${source.url}#page=${source.page}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-[#8b6b38] hover:underline">
-                            <FileCheck2 size={11} /> {source.url === report.data.monthlyPdfUrl ? 'July report' : 'Jan–July report'} p.{source.page}, row {source.row}
+                            <FileCheck2 size={11} /> {source.url === report.data.monthlyPdfUrl ? `${monthLabel(report.data.reportThrough)} report` : `Jan–${monthLabel(report.data.reportThrough)} report`} p.{source.page}, row {source.row}
                           </a>
                         ))}
                       </div>

@@ -3,13 +3,18 @@
 ## Present state
 
 The Orem source is a **read-only PDF-backed report**. Its API retrieves the city's
-fixed July monthly and January–July 2026 reports, verifies their identity and
-matching July records, and returns deduplicated commercial permit signals grouped
-by normalized Orem site address. It does not call Atlas ingestion, write to the
+August monthly (5 pages) and January–August 2026 cumulative (28 pages) PDFs
+linked from https://orem.gov/buildingsafety. It verifies report identity and
+matching August commercial rows, then returns deduplicated signals grouped by
+normalized Orem site address. Older commercial rows remain available from the
+cumulative report with its exact page and row citation; August rows have both
+monthly and cumulative citations. It does not call Atlas ingestion, write to the
 database, change schemas, or add Orem results to the lending queue. The existing
-Utah County GIS source and its stale status remain separate. The PDF covers Orem
-only and does not establish activity after July 31, 2026; the city source page
-may link newer reports.
+Utah County GIS source and its stale status remain separate. These PDFs cover
+Orem only and do not establish activity after August 31, 2026. Report health
+means the PDF covers the latest complete calendar month, not that a permit is
+live or that a lending opportunity is qualified. Check the city page for newer
+reports as subsequent months close.
 
 ## Before any future persistent ingest or migration
 

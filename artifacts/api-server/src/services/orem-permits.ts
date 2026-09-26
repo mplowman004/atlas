@@ -8,15 +8,15 @@ pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
   createRequire(import.meta.url).resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"),
 ).href;
 
-export const OREM_JULY_PDF_URL =
-  "https://orem.gov/wp-content/uploads/2026/08/Building-Permits-July-2026.pdf";
-export const OREM_JANUARY_JULY_PDF_URL =
-  "https://orem.gov/wp-content/uploads/2026/08/Building-Permits-2026-Web-Jan-July-Consecutive.pdf";
+export const OREM_AUGUST_PDF_URL =
+  "https://orem.gov/wp-content/uploads/2026/09/Building-Permits-August-2026.pdf";
+export const OREM_JANUARY_AUGUST_PDF_URL =
+  "https://orem.gov/wp-content/uploads/2026/09/Building-Permits-2026-Web-Jan-August.pdf";
 export const OREM_SOURCE_URLS = [
-  OREM_JULY_PDF_URL,
-  OREM_JANUARY_JULY_PDF_URL,
+  OREM_AUGUST_PDF_URL,
+  OREM_JANUARY_AUGUST_PDF_URL,
 ] as const;
-export const OREM_REPORT_THROUGH = "2026-07-31";
+export const OREM_REPORT_THROUGH = "2026-08-31";
 export const OREM_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export type OremPdfTextItem = { str: string; transform: number[] };
@@ -235,18 +235,18 @@ function parsePage(page: OremPdfPage, url: string, pageNumber: number, now: Date
 export function parseOremReports(docs: OremPdfDocument[], now = new Date()): OremReport {
   if (!Number.isFinite(now.getTime())) throw new Error("Invalid report reference date");
   if (!Array.isArray(docs) || docs.length !== OREM_SOURCE_URLS.length)
-    throw new Error("Both official City of Orem July 2026 PDFs are required");
+    throw new Error("Both official City of Orem August 2026 PDFs are required");
   const byUrl = new Map<string, OremPdfDocument>();
   for (const doc of docs) {
     assertAllowedUrl(doc.url);
     if (byUrl.has(doc.url)) throw new Error(`Duplicate City of Orem PDF: ${doc.url}`);
     byUrl.set(doc.url, doc);
   }
-  const monthly = byUrl.get(OREM_JULY_PDF_URL);
-  const cumulative = byUrl.get(OREM_JANUARY_JULY_PDF_URL);
+  const monthly = byUrl.get(OREM_AUGUST_PDF_URL);
+  const cumulative = byUrl.get(OREM_JANUARY_AUGUST_PDF_URL);
   if (!monthly || !cumulative) throw new Error("Official monthly and cumulative reports are both required");
-  if (monthly.pages.length !== 3) throw new Error("July 2026 monthly report must contain exactly 3 pages");
-  if (cumulative.pages.length !== 24) throw new Error("January–July 2026 cumulative report must contain exactly 24 pages");
+  if (monthly.pages.length !== 5) throw new Error("August 2026 monthly report must contain exactly 5 pages");
+  if (cumulative.pages.length !== 28) throw new Error("January–August 2026 cumulative report must contain exactly 28 pages");
 
   const rowsByUrl = new Map<string, Map<string, ParsedRow>>();
   for (const doc of [monthly, cumulative]) {
@@ -263,39 +263,40 @@ export function parseOremReports(docs: OremPdfDocument[], now = new Date()): Ore
     rowsByUrl.set(doc.url, unique);
   }
 
-  const monthlyRows = rowsByUrl.get(OREM_JULY_PDF_URL)!;
-  const cumulativeRows = rowsByUrl.get(OREM_JANUARY_JULY_PDF_URL)!;
-  if ([...monthlyRows.values()].some(row => !row.date.startsWith("2026-07-")))
-    throw new Error("Monthly report contains a commercial record outside July 2026");
-  const monthlyJulyRows = monthlyRows;
-  const cumulativeJulyRows = new Map(
-    [...cumulativeRows].filter(([, row]) => row.date.startsWith("2026-07-")),
+  const monthlyRows = rowsByUrl.get(OREM_AUGUST_PDF_URL)!;
+  const cumulativeRows = rowsByUrl.get(OREM_JANUARY_AUGUST_PDF_URL)!;
+  if (monthlyRows.size === 0)
+    throw new Error("August monthly report contained no validated commercial permits");
+  if ([...monthlyRows.values()].some(row => !row.date.startsWith("2026-08-")))
+    throw new Error("Monthly report contains a commercial record outside August 2026");
+  const cumulativeAugustRows = new Map(
+    [...cumulativeRows].filter(([, row]) => row.date.startsWith("2026-08-")),
   );
-  if (monthlyJulyRows.size !== cumulativeJulyRows.size ||
-    [...monthlyJulyRows.keys()].some(id => !cumulativeJulyRows.has(id)))
-    throw new Error("July commercial permits are not present in both official reports");
+  if (monthlyRows.size !== cumulativeAugustRows.size ||
+    [...monthlyRows.keys()].some(id => !cumulativeAugustRows.has(id)))
+    throw new Error("August commercial permits are not present in both official reports");
   const permits: OremPermit[] = [];
   for (const [id, row] of cumulativeRows) {
-    const julyDuplicate = row.date.startsWith("2026-07-")
-      ? monthlyJulyRows.get(id)
+    const augustDuplicate = row.date.startsWith("2026-08-")
+      ? monthlyRows.get(id)
       : undefined;
-    if (row.date.startsWith("2026-07-") && !julyDuplicate)
-      throw new Error(`Monthly report is missing July permit ${id}`);
-    if (julyDuplicate && (
-      julyDuplicate.date !== row.date || julyDuplicate.permitType !== row.permitType ||
-      julyDuplicate.address !== row.address || julyDuplicate.valuation !== row.valuation ||
-      julyDuplicate.builder !== row.builder
+    if (row.date.startsWith("2026-08-") && !augustDuplicate)
+      throw new Error(`Monthly report is missing August permit ${id}`);
+    if (augustDuplicate && (
+      augustDuplicate.date !== row.date || augustDuplicate.permitType !== row.permitType ||
+      augustDuplicate.address !== row.address || augustDuplicate.valuation !== row.valuation ||
+      augustDuplicate.builder !== row.builder
     ))
       throw new Error(`Monthly and cumulative reports disagree for permit ${id}`);
     if (!isWithinRecencyWindow(row, now)) continue;
     permits.push({
       ...row,
-      provenance: julyDuplicate
-        ? [julyDuplicate.provenance, row.provenance]
+      provenance: augustDuplicate
+        ? [augustDuplicate.provenance, row.provenance]
         : [row.provenance],
       // Scores reflect evidence corroboration only, never lending fit.
-      score: julyDuplicate ? 0.9 : 0.65,
-      evidenceStrength: julyDuplicate ? "STRONG" : "MODERATE",
+      score: augustDuplicate ? 0.9 : 0.65,
+      evidenceStrength: augustDuplicate ? "STRONG" : "MODERATE",
     });
   }
   if (permits.length === 0)
@@ -328,7 +329,7 @@ export function parseOremReports(docs: OremPdfDocument[], now = new Date()): Ore
     groupCount: groups.length,
     permits,
     groups,
-    scoringNote: "Evidence-strength score (0–1), not a borrowing-probability, lending-fit, or approval score. 0.90 indicates an explicitly commercial July record corroborated by both official reports; 0.65 indicates an explicitly commercial cumulative-only record.",
+    scoringNote: "Evidence-strength score (0–1), not a borrowing-probability, lending-fit, or approval score. 0.90 indicates an explicitly commercial August record corroborated by both official reports; 0.65 indicates an explicitly commercial cumulative-only record.",
   };
 }
 
@@ -372,7 +373,7 @@ async function readOfficialPdf(url: string): Promise<OremPdfDocument> {
   } catch (error) {
     throw new Error(`Unable to decode official City of Orem PDF: ${String(error)}`);
   }
-  const expectedPages = url === OREM_JULY_PDF_URL ? 3 : 24;
+  const expectedPages = url === OREM_AUGUST_PDF_URL ? 5 : 28;
   if (pdf.numPages !== expectedPages)
     throw new Error(`Unexpected page count in official City of Orem PDF: expected ${expectedPages}, received ${pdf.numPages}`);
   const pages: OremPdfPage[] = [];
@@ -388,8 +389,8 @@ async function readOfficialPdf(url: string): Promise<OremPdfDocument> {
   const extractedText = pages.flatMap(page =>
     typeof page === "string" ? [page] : page.items.map(item => item.str)).join(" ").toUpperCase();
   if (!extractedText.includes("CITY OF OREM") ||
-    !extractedText.includes("PERMIT STATISTICS FOR JULY 2026"))
-    throw new Error(`Official PDF does not identify the City of Orem July 2026 permit report: ${url}`);
+    !extractedText.includes("PERMIT STATISTICS FOR AUGUST 2026"))
+    throw new Error(`Official PDF does not identify the City of Orem August 2026 permit report: ${url}`);
   return { url, pages };
 }
 
